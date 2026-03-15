@@ -1,0 +1,88 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# VS Code related
+.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+.packages
+
+# iOS/macOS
+**/ios/Pods/
+**/ios/.symlinks/
+**/ios/Podfile.lock
+**/macos/Pods/
+**/macos/.symlinks/
+**/macos/Podfile.lock
+**/macos/Flutter/ephemeral/
+
+# Windows
+**/windows/flutter/ephemeral/
+
+# Linux
+**/linux/flutter/ephemeral/
+
+# Web related
+lib/generated_plugin_registrant.dart
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# Generated code (MobX, Drift, etc.)
+*.g.dart
+*.freezed.dart
+
+# Coverage
+coverage/
+
+# Secrets and credentials
+.env
+.env.*
+*.jks
+*.keystore
+key.properties
+secrets.yaml
+credentials.json
+
+# FVM
+.fvm/
+
+# Development notes and AI-generated content
+thoughts/
+
+# Claude Code
+.claude/
+CLAUDE.md

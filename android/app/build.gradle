@@ -1,0 +1,84 @@
+plugins {
+    id "com.android.application"
+    id "kotlin-android"
+    id "dev.flutter.flutter-gradle-plugin"
+}
+
+def localProperties = new Properties()
+def localPropertiesFile = rootProject.file('local.properties')
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.withReader('UTF-8') { reader ->
+        localProperties.load(reader)
+    }
+}
+
+def flutterVersionCode = localProperties.getProperty('flutter.versionCode')
+if (flutterVersionCode == null) {
+    flutterVersionCode = '1'
+}
+
+def flutterVersionName = localProperties.getProperty('flutter.versionName')
+if (flutterVersionName == null) {
+    flutterVersionName = '1.0'
+}
+
+android {
+    namespace "com.aminazirani.clawon"
+    compileSdk 36
+
+    lint {
+        disable 'InvalidPackage'
+    }
+
+    compileOptions {
+        coreLibraryDesugaringEnabled true
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
+    defaultConfig {
+        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
+        applicationId "com.aminazirani.clawon"
+        minSdkVersion flutter.minSdkVersion
+        targetSdkVersion 35
+        versionCode flutterVersionCode.toInteger()
+        versionName flutterVersionName
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        release {
+            def keystoreFile = rootProject.file('clawon-release.jks')
+            if (keystoreFile.exists()) {
+                keyAlias 'clawon'
+                keyPassword System.getenv("ANDROID_KEY_PASSWORD") ?: localProperties.getProperty('androidKeyPassword')
+                storeFile keystoreFile
+                storePassword System.getenv("ANDROID_STORE_PASSWORD") ?: localProperties.getProperty('androidStorePassword')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            def keystoreFile = rootProject.file('clawon-release.jks')
+            signingConfig keystoreFile.exists() ? signingConfigs.release : signingConfigs.debug
+            minifyEnabled false
+            shrinkResources false
+        }
+    }
+}
+
+flutter {
+    source '../..'
+}
+
+dependencies {
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'
+    testImplementation 'junit:junit:4.12'
+    androidTestImplementation 'androidx.test.ext:junit:1.1.1'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.1.0'
+}

@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Does this app use data for tracking? No. -->
+	<key>NSPrivacyTracking</key>
+	<false/>
+
+	<!-- No tracking domains. -->
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+
+	<!-- No user data is collected or transmitted. -->
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+
+	<!--
+		Required Reason APIs used by ClawOn and its dependencies:
+
+		1. NSPrivacyAccessedAPICategoryUserDefaults
+		   Used by: shared_preferences (stores language, theme, onboarding state in NSUserDefaults)
+		   Reason: CA92.1 — App functionality (storing user preferences)
+
+		2. NSPrivacyAccessedAPICategoryFileTimestamp
+		   Used by: drift/SQLite (reads/modifies timestamps on the local database file)
+		   Reason: C617.1 — File access within the app's own sandbox
+	-->
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>CA92.1</string>
+			</array>
+		</dict>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>C617.1</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

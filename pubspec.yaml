@@ -7,7 +7,7 @@ description: ClawOn — One app. All your OpenClaw gateways. Every platform.
 # Both the version and the builder number may be overridden in flutter
 # build by specifying --build-name and --build-number, respectively.
 # Read more about versioning at semver.org.
-version: 1.0.0+7
+version: 1.0.0+8
 
 environment:
   sdk: ^3.10.0

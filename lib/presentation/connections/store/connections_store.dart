@@ -214,6 +214,7 @@ abstract class _ConnectionsStore with Store {
     );
     await _connectionRepository.saveConnection(connection);
     connections.insert(0, connection); // Add to top
+    _subscribeToConnectionStatuses();
     return connection;
   }
 

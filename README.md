@@ -1,6 +1,7 @@
 <!-- Badges -->
 <div align="center">
 
+[![Website][website-badge]][website-link]
 [![CI Status][ci-badge]][ci-link]
 [![Build Status][build-badge]][build-link]
 [![License][license-badge]][license-link]
@@ -17,7 +18,7 @@
 
   A cross-platform flutter based client for [OpenClaw](https://github.com/openclaw) — chat with AI agents, manage skills, create custom agents, and connect to multiple gateways from any device.
 
-  **[Download](#download) • [Features](#features) • [Screenshots](#screenshots) • [Getting Started](#getting-started) • [Development](#development) • [Architecture](#architecture)**
+  **[clawonapp.com](https://clawonapp.com) • [Download](#download) • [Features](#features) • [Screenshots](#screenshots) • [Getting Started](#getting-started) • [Development](#development) • [Architecture](#architecture)**
 
 </div>
 
@@ -263,6 +264,8 @@ flutter packages pub run build_runner build --delete-conflicting-outputs
 This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
 
 <!-- Badge Links -->
+[website-badge]: https://img.shields.io/badge/website-clawonapp.com-FBBF24?style=flat&logo=googlechrome&logoColor=black
+[website-link]: https://clawonapp.com
 [ci-badge]: https://img.shields.io/github/actions/workflow/status/aazirani/clawon/ci.yml?branch=main&label=ci
 [ci-link]: https://github.com/aazirani/clawon/actions/workflows/ci.yml
 [build-badge]: https://img.shields.io/github/actions/workflow/status/aazirani/clawon/build.yml?branch=main&label=build

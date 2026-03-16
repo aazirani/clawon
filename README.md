@@ -34,6 +34,55 @@
 - **Cross-Platform** — iOS, Android, macOS, Windows, and Linux
 - **Multi-Language** — 25 languages with RTL support (English, Spanish, French, German, Chinese, Japanese, Persian, Arabic, Urdu and more)
 
+## Screenshots
+
+<div align="center">
+  <table>
+    <tr>
+      <td align="center">
+        <img src="assets/screenshots/connections_clawon.png" width="195" alt="Connections"><br>
+        <sub><b>Connections</b></sub>
+      </td>
+      <td align="center">
+        <img src="assets/screenshots/chat_clawon.png" width="195" alt="Chat"><br>
+        <sub><b>Chat</b></sub>
+      </td>
+      <td align="center">
+        <img src="assets/screenshots/sessions_clawon.png" width="195" alt="Sessions"><br>
+        <sub><b>Sessions</b></sub>
+      </td>
+    </tr>
+    <tr>
+      <td align="center">
+        <img src="assets/screenshots/skills_clawon.png" width="195" alt="Skills"><br>
+        <sub><b>Skills Browser</b></sub>
+      </td>
+      <td align="center">
+        <img src="assets/screenshots/single_skill_clawon.png" width="195" alt="Skill Detail"><br>
+        <sub><b>Skill Detail</b></sub>
+      </td>
+      <td align="center">
+        <img src="assets/screenshots/create_agent_clawon.png" width="195" alt="Create Agent"><br>
+        <sub><b>Create Agent</b></sub>
+      </td>
+    </tr>
+    <tr>
+      <td align="center">
+        <img src="assets/screenshots/create_session_clawon.png" width="195" alt="New Session"><br>
+        <sub><b>New Session</b></sub>
+      </td>
+      <td align="center">
+        <img src="assets/screenshots/edit_connection_clawon.png" width="195" alt="Edit Connection"><br>
+        <sub><b>Edit Connection</b></sub>
+      </td>
+      <td align="center">
+        <img src="assets/screenshots/create_skill_clawon.png" width="195" alt="Create Skill"><br>
+        <sub><b>Create Skill</b></sub>
+      </td>
+    </tr>
+  </table>
+</div>
+
 ## Supported Platforms
 
 | Platform | Status |

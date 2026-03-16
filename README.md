@@ -17,7 +17,7 @@
 
   A cross-platform flutter based client for [OpenClaw](https://github.com/openclaw) — chat with AI agents, manage skills, create custom agents, and connect to multiple gateways from any device.
 
-  **[Features](#features) • [Screenshots](#screenshots) • [Getting Started](#getting-started) • [Development](#development) • [Architecture](#architecture)**
+  **[Download](#download) • [Features](#features) • [Screenshots](#screenshots) • [Getting Started](#getting-started) • [Development](#development) • [Architecture](#architecture)**
 
 </div>
 

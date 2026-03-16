@@ -17,9 +17,21 @@
 
   A cross-platform flutter based client for [OpenClaw](https://github.com/openclaw) — chat with AI agents, manage skills, create custom agents, and connect to multiple gateways from any device.
 
-  **[Features](#features) • [Getting Started](#getting-started) • [Development](#development) • [Architecture](#architecture)**
+  **[Features](#features) • [Screenshots](#screenshots) • [Getting Started](#getting-started) • [Development](#development) • [Architecture](#architecture)**
 
 </div>
+
+---
+
+## Download
+
+| Platform | Download | Notes |
+| :------- | :------- | :---- |
+| Android | [clawon-v1.0.0-android.apk](https://github.com/aazirani/clawon/releases/download/v1.0.0/clawon-v1.0.0-android.apk) | Direct sideload · Google Play coming soon |
+| macOS | [clawon.dmg](https://github.com/aazirani/clawon/releases/download/v1.0.0/clawon.dmg) | Direct download · Mac App Store coming soon |
+| Windows | [clawon-windows.zip](https://github.com/aazirani/clawon/releases/download/v1.0.0/clawon-windows.zip) | Extract and run |
+| Linux | [clawon-linux.tar.gz](https://github.com/aazirani/clawon/releases/download/v1.0.0/clawon-linux.tar.gz) | Extract and run |
+| iOS | App Store *(pending approval)* | |
 
 ---
 

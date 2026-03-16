@@ -41,43 +41,52 @@
     <tr>
       <td align="center">
         <img src="assets/screenshots/connections_clawon.png" width="195" alt="Connections"><br>
-        <sub><b>Connections</b></sub>
+        <sub><b>1. Connections</b></sub><br>
+        <sub>Manage all your gateways</sub>
       </td>
       <td align="center">
-        <img src="assets/screenshots/chat_clawon.png" width="195" alt="Chat"><br>
-        <sub><b>Chat</b></sub>
+        <img src="assets/screenshots/edit_connection_clawon.png" width="195" alt="Edit Connection"><br>
+        <sub><b>2. Edit Connection</b></sub><br>
+        <sub>Configure gateway & token</sub>
       </td>
       <td align="center">
         <img src="assets/screenshots/sessions_clawon.png" width="195" alt="Sessions"><br>
-        <sub><b>Sessions</b></sub>
-      </td>
-    </tr>
-    <tr>
-      <td align="center">
-        <img src="assets/screenshots/skills_clawon.png" width="195" alt="Skills"><br>
-        <sub><b>Skills Browser</b></sub>
-      </td>
-      <td align="center">
-        <img src="assets/screenshots/single_skill_clawon.png" width="195" alt="Skill Detail"><br>
-        <sub><b>Skill Detail</b></sub>
-      </td>
-      <td align="center">
-        <img src="assets/screenshots/create_agent_clawon.png" width="195" alt="Create Agent"><br>
-        <sub><b>Create Agent</b></sub>
+        <sub><b>3. Sessions</b></sub><br>
+        <sub>Browse conversation history</sub>
       </td>
     </tr>
     <tr>
       <td align="center">
         <img src="assets/screenshots/create_session_clawon.png" width="195" alt="New Session"><br>
-        <sub><b>New Session</b></sub>
+        <sub><b>4. New Session</b></sub><br>
+        <sub>Pick an agent, start a session</sub>
       </td>
       <td align="center">
-        <img src="assets/screenshots/edit_connection_clawon.png" width="195" alt="Edit Connection"><br>
-        <sub><b>Edit Connection</b></sub>
+        <img src="assets/screenshots/create_agent_clawon.png" width="195" alt="Create Agent"><br>
+        <sub><b>5. Create Agent</b></sub><br>
+        <sub>Design custom AI agents</sub>
+      </td>
+      <td align="center">
+        <img src="assets/screenshots/chat_clawon.png" width="195" alt="Chat"><br>
+        <sub><b>6. Chat</b></sub><br>
+        <sub>Live streaming AI responses</sub>
+      </td>
+    </tr>
+    <tr>
+      <td align="center">
+        <img src="assets/screenshots/skills_clawon.png" width="195" alt="Skills"><br>
+        <sub><b>7. Skills</b></sub><br>
+        <sub>Browse & enable AI skills</sub>
       </td>
       <td align="center">
         <img src="assets/screenshots/create_skill_clawon.png" width="195" alt="Create Skill"><br>
-        <sub><b>Create Skill</b></sub>
+        <sub><b>8. Create Skill</b></sub><br>
+        <sub>Build reusable skill workflows</sub>
+      </td>
+      <td align="center">
+        <img src="assets/screenshots/single_skill_clawon.png" width="195" alt="Skill Detail"><br>
+        <sub><b>9. Skill Detail</b></sub><br>
+        <sub>Configure & toggle per agent</sub>
       </td>
     </tr>
   </table>

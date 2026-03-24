@@ -33,6 +33,7 @@
 | Windows | [clawon-v1.0.1-windows.zip](https://github.com/aazirani/clawon/releases/download/v1.0.1/clawon-v1.0.1-windows.zip) | Extract and run |
 | Linux | [clawon-v1.0.1-linux.tar.gz](https://github.com/aazirani/clawon/releases/download/v1.0.1/clawon-v1.0.1-linux.tar.gz) | Extract and run |
 | iOS | App Store *(pending approval)* | |
+| Web | [app.clawonapp.com](https://app.clawonapp.com) | No installation required |
 
 ---
 

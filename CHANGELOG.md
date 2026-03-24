@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-03-24
+
+### Fixed
+
+- **macOS crash on quit** — explicitly close the Drift/SQLite database via `didRequestAppExit()` before the Dart VM tears down, preventing a `SIGABRT` from SQLite's `functionDestroy` during process exit
+- **Stale WebSocket timers on exit** — heartbeat monitors and reconnection timers are now cancelled during app shutdown, preventing potential crashes from timers firing after teardown
+
+### Changed
+
+- App Store metadata updated for guideline compliance (4.1c) — removed third-party brand name from app name, subtitle, description, and keywords
+
 ## [1.0.0] - 2026-02-22
 
 ### Added
@@ -20,4 +31,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **25-language support with RTL** — localisation for 25 languages including right-to-left support for Persian (fa), Arabic (ar), and Urdu (ur)
 - **Message history persistence** — all messages stored locally via Drift (SQLite) with per-connection isolation
 
+[1.0.1]: https://github.com/aazirani/clawon/releases/tag/v1.0.1
 [1.0.0]: https://github.com/aazirani/clawon/releases/tag/v1.0.0

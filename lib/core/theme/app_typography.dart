@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
-/// Complete typography system for OpenClaw app.
+/// Complete typography system for app.
 /// Uses Inter for UI text and JetBrains Mono for code.
 ///
 /// Typography Scale:
@@ -31,35 +30,36 @@ class AppTypography {
   static String get currentLocale => _currentLocale;
 
   /// Primary font family for UI text - locale-aware
-  static TextStyle get _interBase => _getGoogleFontForLocale(_currentLocale);
+  static TextStyle get _interBase => _getFontForLocale(_currentLocale);
 
   /// Monospace font family for code (always JetBrains Mono regardless of locale)
-  static TextStyle get _jetBrainsMonoBase => GoogleFonts.jetBrainsMono();
+  static TextStyle get _jetBrainsMonoBase =>
+      const TextStyle(fontFamily: 'JetBrains Mono');
 
-  /// Get Google Fonts TextStyle for a specific locale
-  static TextStyle _getGoogleFontForLocale(String locale) {
+  /// Get TextStyle for a specific locale using bundled fonts
+  static TextStyle _getFontForLocale(String locale) {
     switch (locale) {
       // RTL Languages
       case 'fa':
-        return GoogleFonts.vazirmatn();
+        return const TextStyle(fontFamily: 'Vazirmatn');
       case 'ar':
-        return GoogleFonts.notoSansArabic();
+        return const TextStyle(fontFamily: 'Noto Sans Arabic');
       case 'he':
-        return GoogleFonts.notoSansHebrew();
+        return const TextStyle(fontFamily: 'Noto Sans Hebrew');
       case 'ur':
-        return GoogleFonts.notoNastaliqUrdu();
+        return const TextStyle(fontFamily: 'Noto Nastaliq Urdu');
 
       // CJK Languages
       case 'zh':
-        return GoogleFonts.notoSansSc();
+        return const TextStyle(fontFamily: 'Noto Sans SC');
       case 'ja':
-        return GoogleFonts.notoSansJp();
+        return const TextStyle(fontFamily: 'Noto Sans JP');
       case 'ko':
-        return GoogleFonts.notoSansKr();
+        return const TextStyle(fontFamily: 'Noto Sans KR');
 
       // Default (all other languages use Inter)
       default:
-        return GoogleFonts.inter();
+        return const TextStyle(fontFamily: 'Inter');
     }
   }
 

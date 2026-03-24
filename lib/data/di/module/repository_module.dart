@@ -1,5 +1,6 @@
 import 'package:clawon/data/datasources/connection_local_datasource.dart';
 import 'package:clawon/data/datasources/device_identity_storage.dart';
+import 'package:clawon/data/local/database/app_database.dart';
 import 'package:clawon/data/repositories/chat_repository_impl.dart';
 import 'package:clawon/data/repositories/connection_repository_impl.dart';
 import 'package:clawon/data/repositories/setting/setting_repository_impl.dart';
@@ -38,13 +39,17 @@ class RepositoryModule {
         getIt<GatewayClientInfo>(),
       ),
     );
-    getIt.registerSingleton<AppLifecycleService>(
-      AppLifecycleService(getIt<WebSocketConnectionManager>()),
-    );
     getIt.registerSingleton<MessageService>(
       MessageService(
         getIt<ConnectionLocalDatasource>(),
         getIt<StreamingResponseHandler>(),
+      ),
+    );
+    getIt.registerSingleton<AppLifecycleService>(
+      AppLifecycleService(
+        getIt<WebSocketConnectionManager>(),
+        getIt<MessageService>(),
+        getIt<AppDatabase>().executor,
       ),
     );
 

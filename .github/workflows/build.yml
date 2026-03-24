@@ -337,8 +337,12 @@ jobs:
           name: clawon-linux
           path: release-assets/
 
-      - name: Rename APK with version
-        run: mv release-assets/app-release.apk release-assets/clawon-${{ github.ref_name }}-android.apk
+      - name: Rename assets with version and platform
+        run: |
+          mv release-assets/app-release.apk  release-assets/clawon-${{ github.ref_name }}-android.apk
+          mv release-assets/clawon.dmg        release-assets/clawon-${{ github.ref_name }}-macos.dmg
+          mv release-assets/clawon-windows.zip release-assets/clawon-${{ github.ref_name }}-windows.zip
+          mv release-assets/clawon-linux.tar.gz release-assets/clawon-${{ github.ref_name }}-linux.tar.gz
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -348,9 +352,9 @@ jobs:
             See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for what's new in this release.
           files: |
             release-assets/clawon-${{ github.ref_name }}-android.apk
-            release-assets/clawon.dmg
-            release-assets/clawon-windows.zip
-            release-assets/clawon-linux.tar.gz
+            release-assets/clawon-${{ github.ref_name }}-macos.dmg
+            release-assets/clawon-${{ github.ref_name }}-windows.zip
+            release-assets/clawon-${{ github.ref_name }}-linux.tar.gz
           draft: false
           prerelease: false
           fail_on_unmatched_files: false

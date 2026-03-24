@@ -5,7 +5,7 @@ import 'package:clawon/core/theme/app_spacing.dart';
 import 'package:clawon/core/theme/app_shapes.dart';
 import 'package:clawon/core/theme/app_shadows.dart';
 
-/// Material 3 theme configuration for OpenClaw app.
+/// Material 3 theme configuration for app.
 /// Provides consistent light and dark themes with AI-focused Indigo/Violet colors.
 ///
 /// Usage:

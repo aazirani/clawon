@@ -1,5 +1,5 @@
 name: clawon
-description: ClawOn — One app. All your OpenClaw gateways. Every platform.
+description: ClawOn — One app. All your AI gateways. Every platform.
 
 # The following defines the version and build number for your application.
 # A version number is three numbers separated by dots, like 1.2.43
@@ -7,7 +7,7 @@ description: ClawOn — One app. All your OpenClaw gateways. Every platform.
 # Both the version and the builder number may be overridden in flutter
 # build by specifying --build-name and --build-number, respectively.
 # Read more about versioning at semver.org.
-version: 1.0.0+8
+version: 1.0.1+10
 
 environment:
   sdk: ^3.10.0
@@ -125,3 +125,33 @@ flutter:
     - assets/images/
     - assets/icons/
     - assets/lang/
+    - assets/fonts/
+
+  fonts:
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter[opsz,wght].ttf
+    - family: JetBrains Mono
+      fonts:
+        - asset: assets/fonts/JetBrainsMono[wght].ttf
+    - family: Vazirmatn
+      fonts:
+        - asset: assets/fonts/Vazirmatn[wght].ttf
+    - family: Noto Sans Arabic
+      fonts:
+        - asset: assets/fonts/NotoSansArabic[wdth,wght].ttf
+    - family: Noto Sans Hebrew
+      fonts:
+        - asset: assets/fonts/NotoSansHebrew[wdth,wght].ttf
+    - family: Noto Nastaliq Urdu
+      fonts:
+        - asset: assets/fonts/NotoNastaliqUrdu[wght].ttf
+    - family: Noto Sans SC
+      fonts:
+        - asset: assets/fonts/NotoSansSC[wght].ttf
+    - family: Noto Sans JP
+      fonts:
+        - asset: assets/fonts/NotoSansJP[wght].ttf
+    - family: Noto Sans KR
+      fonts:
+        - asset: assets/fonts/NotoSansKR[wght].ttf

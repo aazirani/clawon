@@ -6,9 +6,15 @@ import 'package:clawon/di/service_locator.dart';
 import 'package:clawon/presentation/my_app.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Disable Google Fonts runtime fetching — all fonts must be bundled locally.
+  // This prevents network calls to Google servers, which is required for
+  // App Store compliance and offline support.
+  GoogleFonts.config.allowRuntimeFetching = false;
 
   // Initialize dependencies
   await ServiceLocator.configureDependencies();

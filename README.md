@@ -298,5 +298,5 @@ This project is licensed under the MIT License — see the [LICENSE](LICENSE) fi
 [ci-link]: https://github.com/aazirani/clawon/actions/workflows/ci.yml
 [build-badge]: https://img.shields.io/github/actions/workflow/status/aazirani/clawon/build.yml?branch=main&label=build
 [build-link]: https://github.com/aazirani/clawon/actions/workflows/build.yml
-[license-badge]: https://img.shields.io/github/license/aazirani/clawon
+[license-badge]: https://img.shields.io/badge/license-MIT-FBBF24?style=flat
 [license-link]: https://github.com/aazirani/clawon/blob/main/LICENSE

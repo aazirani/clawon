@@ -94,6 +94,12 @@ class OpenClawWebSocketDatasource {
         onError: _handleError,
       );
 
+      // On web, connection failures surface through the ready future rather than
+      // the stream's onError. Awaiting it here ensures they are caught by the
+      // surrounding try/catch and reported as a failed connection state instead
+      // of becoming an unhandled zone exception.
+      await _channel!.ready;
+
       // --- Step 1: Wait for connect.challenge event ---
       final challengeCompleter = Completer<Map<String, dynamic>>();
       StreamSubscription<GatewayFrame>? challengeSub;

@@ -16,7 +16,7 @@
 
   **One app. All your OpenClaw gateways. Every platform.**
 
-  A cross-platform Flutter client for [OpenClaw](https://github.com/openclaw) — chat with AI agents, manage skills, create custom agents, and connect to multiple OpenClaw gateways from any device.
+  A cross-platform Flutter client for [OpenClaw](https://github.com/openclaw) — chat with AI agents, manage skills, create custom agents, and connect to multiple OpenClaw gateways from any device, including in the browser.
 
   **[clawonapp.com](https://clawonapp.com) • [Download](#download) • [Features](#features) • [Screenshots](#screenshots) • [Getting Started](#getting-started) • [Development](#development) • [Architecture](#architecture)**
 
@@ -44,7 +44,7 @@
 - **Agent Creation** — Build custom AI agents for different tasks
 - **Session Management** — Organize and browse conversation history
 - **Offline Access** — View message history without an active connection
-- **Cross-Platform** — iOS, Android, macOS, Windows, and Linux
+- **Cross-Platform** — iOS, Android, macOS, Windows, Linux, and Web (browser)
 - **Multi-Language** — 25 languages with RTL support (English, Spanish, French, German, Chinese, Japanese, Persian, Arabic, Urdu and more)
 
 ## Screenshots
@@ -114,6 +114,7 @@
 | macOS    |   ✅    |
 | Windows  |   ✅    |
 | Linux    |   ✅    |
+| Web      |   ✅    |
 
 ## CI/CD Status
 
@@ -124,6 +125,7 @@
 | macOS    | [![macOS](https://img.shields.io/github/actions/workflow/status/aazirani/clawon/build.yml?branch=main&label=macos)](https://github.com/aazirani/clawon/actions) |
 | Windows  | [![Windows](https://img.shields.io/github/actions/workflow/status/aazirani/clawon/build.yml?branch=main&label=windows)](https://github.com/aazirani/clawon/actions) |
 | Linux    | [![Linux](https://img.shields.io/github/actions/workflow/status/aazirani/clawon/build.yml?branch=main&label=linux)](https://github.com/aazirani/clawon/actions) |
+| Web      | [![Web](https://img.shields.io/github/actions/workflow/status/aazirani/clawon/build.yml?branch=main&label=web)](https://github.com/aazirani/clawon/actions) |
 
 ## Prerequisites
 
@@ -227,6 +229,31 @@ flutter build windows --release
 
 # Linux
 flutter build linux --release
+
+# Web
+flutter build web --release
+```
+
+### Web — Drift Assets
+
+Drift requires two binary assets to run in the browser. They are committed to the repo (`web/sqlite3.wasm` and `web/drift_worker.dart.js`) so a plain `flutter build web` works out of the box.
+
+**When to regenerate them:** after running `flutter pub upgrade` if the `sqlite3` package version changes.
+
+```bash
+# 1. Check the new sqlite3 version
+grep -A7 "^  sqlite3:" pubspec.lock | grep version
+
+# 2. Download matching sqlite3.wasm
+curl -L -o web/sqlite3.wasm \
+  https://github.com/simolus3/sqlite3.dart/releases/download/sqlite3-<VERSION>/sqlite3.wasm
+
+# 3. Recompile the Drift web worker
+DRIFT_VERSION=$(grep -A7 "^  drift:" pubspec.lock | grep version | tr -d '" ')
+dart compile js -O2 \
+  ~/.pub-cache/hosted/pub.dev/drift-${DRIFT_VERSION##*:}/web/drift_worker.dart \
+  --packages=.dart_tool/package_config.json \
+  -o web/drift_worker.dart.js
 ```
 
 ## Key Dependencies

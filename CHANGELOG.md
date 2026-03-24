@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.1] - 2026-03-24
 
+### Added
+
+- **Web platform support** — ClawOn now runs in the browser via Flutter Web. Drift uses SQLite compiled to WASM (`sqlite3.wasm`) with a dedicated web worker (`drift_worker.dart.js`) for full local storage support. WebSocket connections use `await channel.ready` to surface connection failures correctly on web.
+
 ### Fixed
 
 - **macOS crash on quit** — explicitly close the Drift/SQLite database via `didRequestAppExit()` before the Dart VM tears down, preventing a `SIGABRT` from SQLite's `functionDestroy` during process exit

@@ -48,7 +48,10 @@ migrate_working_dir/
 **/linux/flutter/ephemeral/
 
 # Web related
-lib/generated_plugin_registrant.dart
+
+# Drift web worker compiler artifacts (the .js and .wasm are committed; these are not)
+web/drift_worker.dart.js.deps
+web/drift_worker.dart.js.map
 
 # Symbolication related
 app.*.symbols

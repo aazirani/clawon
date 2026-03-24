@@ -76,6 +76,21 @@ class AppDatabase extends _$AppDatabase {
   }
 
   static QueryExecutor _openConnection() {
-    return driftDatabase(name: 'clawon');
+    return driftDatabase(
+      name: 'clawon',
+      web: DriftWebOptions(
+        sqlite3Wasm: Uri.parse('sqlite3.wasm'),
+        driftWorker: Uri.parse('drift_worker.dart.js'),
+        onResult: (result) {
+          if (result.missingFeatures.isNotEmpty) {
+            // ignore: avoid_print
+            print(
+              'Drift web: using ${result.chosenImplementation} '
+              '(missing: ${result.missingFeatures})',
+            );
+          }
+        },
+      ),
+    );
   }
 }

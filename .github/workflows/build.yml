@@ -32,6 +32,11 @@ on:
         required: false
         default: true
         type: boolean
+      build_web:
+        description: 'Build Web'
+        required: false
+        default: true
+        type: boolean
 
 env:
   FLUTTER_VERSION: '3.38.x'
@@ -301,6 +306,42 @@ jobs:
           retention-days: 30
 
   # ============================================
+  # WEB BUILD
+  # ============================================
+  build-web:
+    name: Web
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_web }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+          cache-key: flutter-:os:-:channel:-:version:-:arch:-:hash:${{ hashFiles('**/pubspec.lock') }}
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Generate code
+        run: flutter packages pub run build_runner build --delete-conflicting-outputs
+
+      - name: Build Web
+        run: flutter build web --release
+
+      - name: Upload Web build
+        uses: actions/upload-artifact@v4
+        with:
+          name: clawon-web
+          path: build/web/
+          retention-days: 30
+
+  # ============================================
   # CREATE GITHUB RELEASE (tag pushes only)
   # ============================================
   create-release:
@@ -365,7 +406,7 @@ jobs:
   build-summary:
     name: Build Summary
     runs-on: ubuntu-latest
-    needs: [build-android, build-ios, build-macos, build-windows, build-linux]
+    needs: [build-android, build-ios, build-macos, build-windows, build-linux, build-web]
     if: always()
 
     steps:
@@ -380,3 +421,4 @@ jobs:
           echo "| macOS | ${{ needs.build-macos.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Windows | ${{ needs.build-windows.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Linux | ${{ needs.build-linux.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Web | ${{ needs.build-web.result }} |" >> $GITHUB_STEP_SUMMARY

@@ -26,14 +26,14 @@
 
 ## Download
 
-| Platform | Download | Notes |
-| :------- | :------- | :---- |
-| Android | [clawon-v1.0.1-android.apk](https://github.com/aazirani/clawon/releases/download/v1.0.1/clawon-v1.0.1-android.apk) | Direct sideload · Google Play coming soon |
-| macOS | [clawon-v1.0.1-macos.dmg](https://github.com/aazirani/clawon/releases/download/v1.0.1/clawon-v1.0.1-macos.dmg) | Direct download · Mac App Store coming soon |
-| Windows | [clawon-v1.0.1-windows.zip](https://github.com/aazirani/clawon/releases/download/v1.0.1/clawon-v1.0.1-windows.zip) | Extract and run |
-| Linux | [clawon-v1.0.1-linux.tar.gz](https://github.com/aazirani/clawon/releases/download/v1.0.1/clawon-v1.0.1-linux.tar.gz) | Extract and run |
-| iOS | [App Store](https://apps.apple.com/us/app/clawon-ai-gateway-client/id6759576211) | |
-| Web | [app.clawonapp.com](https://app.clawonapp.com) | No installation required |
+| Platform | Download | Notes                                     |
+| :------- | :------- |:------------------------------------------|
+| Android | [Google Play](https://play.google.com/store/apps/details?id=com.aminazirani.clawon) · [clawon-v1.0.1-android.apk](https://github.com/aazirani/clawon/releases/download/v1.0.1/clawon-v1.0.1-android.apk) | APK also available for direct sideload |
+| macOS | [clawon-v1.0.1-macos.dmg](https://github.com/aazirani/clawon/releases/download/v1.0.1/clawon-v1.0.1-macos.dmg) | Direct download                           |
+| Windows | [clawon-v1.0.1-windows.zip](https://github.com/aazirani/clawon/releases/download/v1.0.1/clawon-v1.0.1-windows.zip) | Extract and run                           |
+| Linux | [clawon-v1.0.1-linux.tar.gz](https://github.com/aazirani/clawon/releases/download/v1.0.1/clawon-v1.0.1-linux.tar.gz) | Extract and run                           |
+| iOS | [App Store](https://apps.apple.com/us/app/clawon-ai-gateway-client/id6759576211) |                                           |
+| Web | [app.clawonapp.com](https://app.clawonapp.com) | No installation required                  |
 
 ---
 

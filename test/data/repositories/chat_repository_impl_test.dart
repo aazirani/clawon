@@ -7,6 +7,8 @@ import 'package:clawon/data/services/active_session_registry.dart';
 import 'package:clawon/data/services/message_service.dart';
 import 'package:clawon/data/services/streaming_response_handler.dart';
 import 'package:clawon/data/services/websocket_connection_manager.dart';
+import 'package:clawon/di/service_locator.dart';
+import 'package:clawon/domain/repositories/session_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
@@ -18,6 +20,8 @@ class MockLocalDatasource extends Mock implements ConnectionLocalDatasource {}
 class MockMessageService extends Mock implements MessageService {}
 
 class MockDatasource extends Mock implements OpenClawWebSocketDatasource {}
+
+class MockSessionRepository extends Mock implements SessionRepository {}
 
 void main() {
   setUpAll(() {
@@ -502,6 +506,80 @@ void main() {
       expect(capturedParams.first['message'], equals('hi there'));
       expect(capturedParams.first['sessionKey'], equals('agent:a:s1'));
       expect(capturedParams.first['idempotencyKey'], isA<String>());
+    });
+  });
+
+  group('fetchAndSyncHistory v4 items', () {
+    test('skips unknown roles (custom/compaction) without throwing', () async {
+      final sessionRepo = MockSessionRepository();
+      when(
+        () => sessionRepo.fetchSessionHistory(
+          'conn-1',
+          'agent:a:s1',
+          limit: any(named: 'limit'),
+        ),
+      ).thenAnswer(
+        (_) async => [
+          {
+            'role': 'custom',
+            'customType': 'tool_result',
+            'content': 'tool output',
+            'timestamp': 1737264000000,
+            '__openclaw': {'seq': 3, 'transcriptPosition': 'leaf'},
+          },
+          {
+            'role': 'system',
+            'content': [
+              {'type': 'text', 'text': 'Compaction'},
+            ],
+            'timestamp': 1737264000001,
+            '__openclaw': {'kind': 'compaction', 'seq': 4},
+          },
+          {
+            'role': 'user',
+            'content': 'real message',
+            'timestamp': 1737264000002,
+            '__openclaw': {'id': 'stable-v4-id', 'seq': 5},
+          },
+        ],
+      );
+      getIt.registerSingleton<SessionRepository>(sessionRepo);
+      addTearDown(getIt.reset);
+
+      // Back the messageService mock: persisted messages become the
+      // local cache returned by getMessages.
+      final persisted = <ChatMessage>[];
+      when(
+        () => messageService.loadMessages(
+          any(),
+          sessionKey: any(named: 'sessionKey'),
+        ),
+      ).thenAnswer((_) async {});
+      when(
+        () => messageService.getMessages(
+          any(),
+          sessionKey: any(named: 'sessionKey'),
+        ),
+      ).thenAnswer((_) => persisted);
+      when(
+        () => messageService.persistMessage(
+          any(),
+          any(),
+          sessionKey: any(named: 'sessionKey'),
+        ),
+      ).thenAnswer((inv) async {
+        persisted.add(inv.positionalArguments[1] as ChatMessage);
+      });
+
+      final messages = await repo.fetchAndSyncHistory(
+        'conn-1',
+        sessionKey: 'agent:a:s1',
+      );
+
+      // Unknown roles skipped (no ArgumentError thrown), known items survive.
+      expect(messages.any((m) => m.content == 'real message'), isTrue);
+      expect(messages.any((m) => m.content == 'Compaction'), isFalse);
+      expect(messages.any((m) => m.content == 'tool output'), isFalse);
     });
   });
 }

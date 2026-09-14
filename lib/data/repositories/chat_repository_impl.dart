@@ -187,6 +187,22 @@ class ChatRepositoryImpl implements ChatRepository {
     for (var i = 0; i < historyData.length; i++) {
       try {
         final jsonData = historyData[i] as Map<String, dynamic>;
+
+        // v4 transcripts contain roles with no local representation
+        // (custom messages, compaction entries) - skip instead of throwing.
+        final itemRole = jsonData['role'] as String?;
+        final openClawMeta = jsonData['__openclaw'];
+        final metaKind = openClawMeta is Map<String, dynamic>
+            ? openClawMeta['kind'] as String?
+            : null;
+        const knownRoles = {'user', 'assistant', 'system', 'toolResult'};
+        if (itemRole == null || !knownRoles.contains(itemRole)) {
+          continue;
+        }
+        if (metaKind == 'compaction' || metaKind == 'reset') {
+          continue;
+        }
+
         final chatMessage = ChatMessage.fromGatewayHistory(jsonData);
 
         // Skip non-visible messages (tool results, empty assistant turns)

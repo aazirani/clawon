@@ -7,7 +7,7 @@ description: ClawOn — One app. All your AI gateways. Every platform.
 # Both the version and the builder number may be overridden in flutter
 # build by specifying --build-name and --build-number, respectively.
 # Read more about versioning at semver.org.
-version: 1.0.1+10
+version: 1.1.0+11
 
 environment:
   sdk: ^3.10.0

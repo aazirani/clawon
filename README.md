@@ -40,6 +40,7 @@
 ## Features
 
 - **Multi-Gateway Management** — Connect to and manage multiple OpenClaw gateways
+- **Gateway Compatibility** — Compatible with OpenClaw Gateway Protocol v3 and v4 (gateways ≥ 2026.6.8 supported)
 - **Real-Time Chat** — Streaming AI responses with live text rendering
 - **Skills Management** — Enable or disable AI capabilities per connection
 - **Agent Creation** — Build custom AI agents for different tasks

@@ -39,7 +39,7 @@ on:
         type: boolean
 
 env:
-  FLUTTER_VERSION: '3.38.x'
+  FLUTTER_VERSION: '3.44.x'
 
 jobs:
   # ============================================

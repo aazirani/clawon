@@ -1,0 +1,592 @@
+import 'package:clawon/data/datasources/connection_local_datasource.dart';
+import 'package:clawon/data/datasources/openclaw_ws_datasource.dart';
+import 'package:clawon/data/models/chat_message.dart';
+import 'package:clawon/data/models/gateway_frame.dart';
+import 'package:clawon/data/repositories/chat_repository_impl.dart';
+import 'package:clawon/data/services/active_session_registry.dart';
+import 'package:clawon/data/services/message_service.dart';
+import 'package:clawon/data/services/streaming_response_handler.dart';
+import 'package:clawon/data/services/websocket_connection_manager.dart';
+import 'package:clawon/di/service_locator.dart';
+import 'package:clawon/domain/repositories/session_repository.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
+
+class MockConnectionManager extends Mock
+    implements WebSocketConnectionManager {}
+
+class MockLocalDatasource extends Mock implements ConnectionLocalDatasource {}
+
+class MockMessageService extends Mock implements MessageService {}
+
+class MockDatasource extends Mock implements OpenClawWebSocketDatasource {}
+
+class MockSessionRepository extends Mock implements SessionRepository {}
+
+void main() {
+  setUpAll(() {
+    registerFallbackValue(GatewayFrame(type: FrameType.res, id: 'x', ok: true));
+    registerFallbackValue(
+      ChatMessage(
+        id: 'x',
+        role: MessageRole.user,
+        content: '',
+        timestamp: DateTime.now(),
+      ),
+    );
+    registerFallbackValue(MessageStatus.sent);
+    registerFallbackValue(DateTime(2026));
+    registerFallbackValue(<String, dynamic>{});
+  });
+
+  late MockConnectionManager manager;
+  late MockLocalDatasource localDatasource;
+  late MockMessageService messageService;
+  late ActiveSessionRegistry registry;
+  late StreamingResponseHandler streamingHandler;
+  late ChatRepositoryImpl repo;
+  late FrameHandler handler;
+  final emitted = <ChatMessage>[];
+
+  GatewayFrame chatFrame(Map<String, dynamic> payload) =>
+      GatewayFrame(type: FrameType.event, event: 'chat', payload: payload);
+
+  setUp(() {
+    manager = MockConnectionManager();
+    localDatasource = MockLocalDatasource();
+    messageService = MockMessageService();
+    registry = ActiveSessionRegistry();
+    streamingHandler = StreamingResponseHandler();
+    emitted.clear();
+
+    when(() => manager.setFrameHandler(captureAny())).thenAnswer((inv) {
+      handler = inv.positionalArguments[0] as FrameHandler;
+    });
+    when(() => manager.disconnect(any())).thenAnswer((_) async {});
+    when(() => messageService.emitAgentResponse(any(), any())).thenAnswer((
+      inv,
+    ) {
+      emitted.add(inv.positionalArguments[1] as ChatMessage);
+    });
+    when(
+      () => messageService.addMessageToCache(
+        any(),
+        any(),
+        sessionKey: any(named: 'sessionKey'),
+      ),
+    ).thenReturn(null);
+    when(
+      () => messageService.updateMessageInCache(
+        any(),
+        any(),
+        sessionKey: any(named: 'sessionKey'),
+      ),
+    ).thenReturn(null);
+    when(
+      () => messageService.saveMessages(
+        any(),
+        sessionKey: any(named: 'sessionKey'),
+      ),
+    ).thenAnswer((_) async {});
+    when(
+      () => messageService.persistMessage(
+        any(),
+        any(),
+        sessionKey: any(named: 'sessionKey'),
+      ),
+    ).thenAnswer((_) async {});
+    when(
+      () => messageService.updateMessageStatus(any(), any(), any()),
+    ).thenAnswer((_) async {});
+    when(
+      () => messageService.setWaitingForResponse(
+        any(),
+        any(),
+        sessionKey: any(named: 'sessionKey'),
+      ),
+    ).thenReturn(null);
+    when(
+      () => localDatasource.updateConnectionMetadata(
+        any(),
+        lastMessageAt: any(named: 'lastMessageAt'),
+        lastMessagePreview: any(named: 'lastMessagePreview'),
+      ),
+    ).thenAnswer((_) async {});
+
+    repo = ChatRepositoryImpl(
+      localDatasource,
+      manager,
+      registry,
+      streamingHandler,
+      messageService,
+    );
+  });
+
+  group('v4 chat events', () {
+    test('incremental deltas accumulate into one streaming message', () {
+      registry.registerSession('conn-1', 'agent:a:s1');
+      registry.registerRunId('conn-1', 'run-1', 'agent:a:s1');
+
+      handler(
+        'conn-1',
+        chatFrame({
+          'runId': 'run-1',
+          'sessionKey': 'agent:a:s1',
+          'seq': 0,
+          'state': 'delta',
+          'deltaText': 'Hello',
+        }),
+      );
+      handler(
+        'conn-1',
+        chatFrame({
+          'runId': 'run-1',
+          'sessionKey': 'agent:a:s1',
+          'seq': 1,
+          'state': 'delta',
+          'deltaText': ' world',
+        }),
+      );
+
+      expect(emitted, isNotEmpty);
+      final last = emitted.last;
+      expect(last.content, equals('Hello world'));
+      expect(last.isStreaming, isTrue);
+      expect(last.role, equals(MessageRole.assistant));
+    });
+
+    test('replace delta resets accumulated text', () {
+      registry.registerSession('conn-1', 'agent:a:s1');
+      registry.registerRunId('conn-1', 'run-2', 'agent:a:s1');
+
+      handler(
+        'conn-1',
+        chatFrame({
+          'runId': 'run-2',
+          'sessionKey': 'agent:a:s1',
+          'seq': 0,
+          'state': 'delta',
+          'deltaText': 'old draft',
+        }),
+      );
+      handler(
+        'conn-1',
+        chatFrame({
+          'runId': 'run-2',
+          'sessionKey': 'agent:a:s1',
+          'seq': 1,
+          'state': 'delta',
+          'deltaText': 'new answer',
+          'replace': true,
+        }),
+      );
+
+      expect(emitted.last.content, equals('new answer'));
+    });
+
+    test('cumulative message snapshot overrides accumulation', () {
+      registry.registerSession('conn-1', 'agent:a:s1');
+      registry.registerRunId('conn-1', 'run-3', 'agent:a:s1');
+
+      handler(
+        'conn-1',
+        chatFrame({
+          'runId': 'run-3',
+          'sessionKey': 'agent:a:s1',
+          'seq': 0,
+          'state': 'delta',
+          'deltaText': 'partial',
+        }),
+      );
+      handler(
+        'conn-1',
+        chatFrame({
+          'runId': 'run-3',
+          'sessionKey': 'agent:a:s1',
+          'seq': 1,
+          'state': 'delta',
+          'deltaText': ' more',
+          'message': {
+            'role': 'assistant',
+            'content': [
+              {'type': 'text', 'text': 'partial more (full)'},
+            ],
+          },
+        }),
+      );
+
+      expect(emitted.last.content, equals('partial more (full)'));
+    });
+
+    test('final event finalizes the streaming message', () {
+      registry.registerSession('conn-1', 'agent:a:s1');
+      registry.registerRunId('conn-1', 'run-4', 'agent:a:s1');
+
+      handler(
+        'conn-1',
+        chatFrame({
+          'runId': 'run-4',
+          'sessionKey': 'agent:a:s1',
+          'seq': 0,
+          'state': 'delta',
+          'deltaText': 'answer text',
+        }),
+      );
+      handler(
+        'conn-1',
+        chatFrame({
+          'runId': 'run-4',
+          'sessionKey': 'agent:a:s1',
+          'seq': 1,
+          'state': 'final',
+          'message': {'role': 'assistant', 'content': 'answer text'},
+        }),
+      );
+
+      expect(emitted.last.isStreaming, isFalse);
+      expect(emitted.last.content, equals('answer text'));
+      verify(
+        () => messageService.setWaitingForResponse(
+          'conn-1',
+          false,
+          sessionKey: 'agent:a:s1',
+        ),
+      ).called(greaterThanOrEqualTo(1));
+    });
+
+    test('error event with no streamed text emits failed message', () {
+      registry.registerSession('conn-1', 'agent:a:s1');
+      registry.registerRunId('conn-1', 'run-5', 'agent:a:s1');
+
+      handler(
+        'conn-1',
+        chatFrame({
+          'runId': 'run-5',
+          'sessionKey': 'agent:a:s1',
+          'seq': 0,
+          'state': 'error',
+          'errorMessage': 'rate limit exceeded',
+          'errorKind': 'rate_limit',
+        }),
+      );
+
+      expect(emitted, isNotEmpty);
+      expect(emitted.last.content, equals('rate limit exceeded'));
+      expect(emitted.last.isFailed, isTrue);
+    });
+
+    test('status events are ignored', () {
+      registry.registerSession('conn-1', 'agent:a:s1');
+      registry.registerRunId('conn-1', 'run-6', 'agent:a:s1');
+
+      handler(
+        'conn-1',
+        chatFrame({
+          'runId': 'run-6',
+          'sessionKey': 'agent:a:s1',
+          'seq': 0,
+          'state': 'status',
+          'phase': 'starting_model',
+        }),
+      );
+
+      expect(emitted, isEmpty);
+    });
+
+    test('snapshot sync keeps buffer consistent for later deltas', () {
+      registry.registerSession('conn-1', 'agent:a:s1');
+      registry.registerRunId('conn-1', 'run-8', 'agent:a:s1');
+
+      handler(
+        'conn-1',
+        chatFrame({
+          'runId': 'run-8',
+          'sessionKey': 'agent:a:s1',
+          'seq': 0,
+          'state': 'delta',
+          'deltaText': 'partial',
+        }),
+      );
+      handler(
+        'conn-1',
+        chatFrame({
+          'runId': 'run-8',
+          'sessionKey': 'agent:a:s1',
+          'seq': 1,
+          'state': 'delta',
+          'deltaText': ' more',
+          'message': {
+            'role': 'assistant',
+            'content': [
+              {'type': 'text', 'text': 'partial more (full)'},
+            ],
+          },
+        }),
+      );
+      handler(
+        'conn-1',
+        chatFrame({
+          'runId': 'run-8',
+          'sessionKey': 'agent:a:s1',
+          'seq': 2,
+          'state': 'delta',
+          'deltaText': ' !',
+        }),
+      );
+
+      expect(emitted.last.content, equals('partial more (full) !'));
+    });
+
+    test('error after partial text marks finalized message failed', () {
+      registry.registerSession('conn-1', 'agent:a:s1');
+      registry.registerRunId('conn-1', 'run-9', 'agent:a:s1');
+
+      handler(
+        'conn-1',
+        chatFrame({
+          'runId': 'run-9',
+          'sessionKey': 'agent:a:s1',
+          'seq': 0,
+          'state': 'delta',
+          'deltaText': 'partial answer',
+        }),
+      );
+      handler(
+        'conn-1',
+        chatFrame({
+          'runId': 'run-9',
+          'sessionKey': 'agent:a:s1',
+          'seq': 1,
+          'state': 'error',
+          'errorMessage': 'boom',
+        }),
+      );
+
+      expect(emitted.last.content, equals('partial answer'));
+      expect(emitted.last.isFailed, isTrue);
+    });
+
+    test('aborted after partial text finalizes message', () {
+      registry.registerSession('conn-1', 'agent:a:s1');
+      registry.registerRunId('conn-1', 'run-10', 'agent:a:s1');
+
+      handler(
+        'conn-1',
+        chatFrame({
+          'runId': 'run-10',
+          'sessionKey': 'agent:a:s1',
+          'seq': 0,
+          'state': 'delta',
+          'deltaText': 'partial text',
+        }),
+      );
+      handler(
+        'conn-1',
+        chatFrame({
+          'runId': 'run-10',
+          'sessionKey': 'agent:a:s1',
+          'seq': 1,
+          'state': 'aborted',
+        }),
+      );
+
+      expect(emitted.last.isStreaming, isFalse);
+      expect(emitted.last.content, equals('partial text'));
+      expect(emitted.last.isFailed, isFalse);
+    });
+
+    test('unknown state values are ignored', () {
+      registry.registerSession('conn-1', 'agent:a:s1');
+      registry.registerRunId('conn-1', 'run-11', 'agent:a:s1');
+
+      handler(
+        'conn-1',
+        chatFrame({
+          'runId': 'run-11',
+          'sessionKey': 'agent:a:s1',
+          'seq': 0,
+          'state': 'delta_v2',
+          'deltaText': 'should be ignored',
+        }),
+      );
+
+      expect(emitted, isEmpty);
+    });
+
+    test('chat event for unowned session is ignored', () {
+      handler(
+        'conn-1',
+        chatFrame({
+          'runId': 'run-12',
+          'sessionKey': 'agent:other:s9',
+          'seq': 0,
+          'state': 'delta',
+          'deltaText': 'not ours',
+        }),
+      );
+
+      expect(emitted, isEmpty);
+    });
+
+    test('delta buffers are scoped per connection', () async {
+      registry.registerSession('conn-1', 'agent:a:s1');
+      registry.registerRunId('conn-1', 'run-13', 'agent:a:s1');
+      registry.registerSession('conn-2', 'agent:a:s2');
+      registry.registerRunId('conn-2', 'run-14', 'agent:a:s2');
+
+      handler(
+        'conn-1',
+        chatFrame({
+          'runId': 'run-13',
+          'sessionKey': 'agent:a:s1',
+          'seq': 0,
+          'state': 'delta',
+          'deltaText': 'part one',
+        }),
+      );
+      await repo.disconnect('conn-2');
+      handler(
+        'conn-1',
+        chatFrame({
+          'runId': 'run-13',
+          'sessionKey': 'agent:a:s1',
+          'seq': 1,
+          'state': 'delta',
+          'deltaText': ' part two',
+        }),
+      );
+
+      expect(emitted.last.content, equals('part one part two'));
+    });
+  });
+
+  group('v3 agent events (regression)', () {
+    test('assistant stream events still update streaming message', () {
+      registry.registerSession('conn-1', 'agent:a:s1');
+      registry.registerRunId('conn-1', 'run-7', 'agent:a:s1');
+
+      handler(
+        'conn-1',
+        GatewayFrame(
+          type: FrameType.event,
+          event: 'agent',
+          payload: {
+            'stream': 'assistant',
+            'runId': 'run-7',
+            'sessionKey': 'agent:a:s1',
+            'data': {'text': 'legacy stream text'},
+          },
+        ),
+      );
+
+      expect(emitted, isNotEmpty);
+      expect(emitted.last.content, equals('legacy stream text'));
+    });
+  });
+
+  group('chat.send params', () {
+    test('includes idempotencyKey (required by protocol v4)', () async {
+      final ws = MockDatasource();
+      final capturedParams = <Map<String, dynamic>>[];
+      when(() => ws.sendRequest('chat.send', captureAny())).thenAnswer((inv) {
+        capturedParams.add(
+          inv.positionalArguments[1] as Map<String, dynamic>? ??
+              <String, dynamic>{},
+        );
+        return Future.value(
+          GatewayFrame(type: FrameType.res, id: 'res-1', ok: true),
+        );
+      });
+      when(() => manager.isConnected(any())).thenReturn(true);
+      when(() => manager.getWebSocket(any())).thenReturn(ws);
+
+      await repo.sendMessage('conn-1', 'hi there', sessionKey: 'agent:a:s1');
+
+      expect(capturedParams, hasLength(1));
+      expect(capturedParams.first['message'], equals('hi there'));
+      expect(capturedParams.first['sessionKey'], equals('agent:a:s1'));
+      expect(capturedParams.first['idempotencyKey'], isA<String>());
+    });
+  });
+
+  group('fetchAndSyncHistory v4 items', () {
+    test('skips unknown roles (custom/compaction) without throwing', () async {
+      final sessionRepo = MockSessionRepository();
+      when(
+        () => sessionRepo.fetchSessionHistory(
+          'conn-1',
+          'agent:a:s1',
+          limit: any(named: 'limit'),
+        ),
+      ).thenAnswer(
+        (_) async => [
+          {
+            'role': 'custom',
+            'customType': 'tool_result',
+            'content': 'tool output',
+            'timestamp': 1737264000000,
+            '__openclaw': {'seq': 3, 'transcriptPosition': 'leaf'},
+          },
+          {
+            'role': 'system',
+            'content': [
+              {'type': 'text', 'text': 'Compaction'},
+            ],
+            'timestamp': 1737264000001,
+            '__openclaw': {'kind': 'compaction', 'seq': 4},
+          },
+          {
+            'role': 'user',
+            'content': 'real message',
+            'timestamp': 1737264000002,
+            '__openclaw': {'id': 'stable-v4-id', 'seq': 5},
+          },
+          {
+            'role': 'user',
+            'content': 'after reset',
+            'timestamp': 1737264000003,
+            '__openclaw': {'kind': 'reset', 'seq': 6},
+          },
+        ],
+      );
+      getIt.registerSingleton<SessionRepository>(sessionRepo);
+      addTearDown(getIt.reset);
+
+      // Back the messageService mock: persisted messages become the
+      // local cache returned by getMessages.
+      final persisted = <ChatMessage>[];
+      when(
+        () => messageService.loadMessages(
+          any(),
+          sessionKey: any(named: 'sessionKey'),
+        ),
+      ).thenAnswer((_) async {});
+      when(
+        () => messageService.getMessages(
+          any(),
+          sessionKey: any(named: 'sessionKey'),
+        ),
+      ).thenAnswer((_) => persisted);
+      when(
+        () => messageService.persistMessage(
+          any(),
+          any(),
+          sessionKey: any(named: 'sessionKey'),
+        ),
+      ).thenAnswer((inv) async {
+        persisted.add(inv.positionalArguments[1] as ChatMessage);
+      });
+
+      final messages = await repo.fetchAndSyncHistory(
+        'conn-1',
+        sessionKey: 'agent:a:s1',
+      );
+
+      // Unknown roles skipped (no ArgumentError thrown), known items survive.
+      expect(messages.where((m) => m.content == 'real message').length, 1);
+      expect(messages.any((m) => m.content == 'Compaction'), isFalse);
+      expect(messages.any((m) => m.content == 'tool output'), isFalse);
+      expect(messages.any((m) => m.content == 'after reset'), isFalse);
+    });
+  });
+}

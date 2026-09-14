@@ -111,6 +111,9 @@ class FakeWebSocket implements OpenClawWebSocketDatasource {
   final List<Map<String, dynamic>> _requests = [];
   ConnectionState _state = ConnectionState.disconnected;
 
+  @override
+  int? negotiatedProtocol;
+
   List<dynamic>? skillsListResponse;
   Map<String, dynamic>? installResponse;
   String? errorResponse;

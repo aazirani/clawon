@@ -123,8 +123,10 @@ void main() {
         expect(message.id, equals('msg-123'));
         expect(message.role, equals(MessageRole.user));
         expect(message.content, equals('Hello, world!'));
-        expect(message.timestamp,
-            equals(DateTime.parse('2024-01-15T10:30:00.000Z')));
+        expect(
+          message.timestamp,
+          equals(DateTime.parse('2024-01-15T10:30:00.000Z')),
+        );
       });
 
       test('deserializes all message role types correctly', () {
@@ -212,8 +214,13 @@ void main() {
         // Act & Assert: Should throw ArgumentError
         expect(
           () => ChatMessage.fromJson(json),
-          throwsA(isA<ArgumentError>().having(
-              (e) => e.message, 'message', contains('Unknown message role'))),
+          throwsA(
+            isA<ArgumentError>().having(
+              (e) => e.message,
+              'message',
+              contains('Unknown message role'),
+            ),
+          ),
         );
       });
     });
@@ -267,8 +274,11 @@ void main() {
           final restored = ChatMessage.fromJson(json);
 
           // Assert: Verify role is preserved
-          expect(restored.role, equals(role),
-              reason: 'Role $role should be preserved through round-trip');
+          expect(
+            restored.role,
+            equals(role),
+            reason: 'Role $role should be preserved through round-trip',
+          );
         }
       });
     });
@@ -508,8 +518,10 @@ void main() {
       expect(message.id, equals('msg-123'));
       expect(message.role, equals(MessageRole.user));
       expect(message.content, equals('Hello, world!'));
-      expect(message.timestamp,
-          equals(DateTime.fromMillisecondsSinceEpoch(1705315800000)));
+      expect(
+        message.timestamp,
+        equals(DateTime.fromMillisecondsSinceEpoch(1705315800000)),
+      );
     });
 
     test('joins multiple text content items with newlines', () {
@@ -560,12 +572,17 @@ void main() {
       final message = ChatMessage.fromGatewayHistory(json);
 
       // Assert: ISO8601 timestamp is parsed correctly
-      expect(message.timestamp, equals(DateTime.parse('2024-01-15T10:30:00.000Z')));
+      expect(
+        message.timestamp,
+        equals(DateTime.parse('2024-01-15T10:30:00.000Z')),
+      );
     });
 
     test('handles Unix epoch timestamp in milliseconds', () {
       // Arrange: Unix epoch in milliseconds
-      final expectedTimestamp = DateTime.fromMillisecondsSinceEpoch(1705315800000);
+      final expectedTimestamp = DateTime.fromMillisecondsSinceEpoch(
+        1705315800000,
+      );
       final json = {
         'id': 'msg-unix',
         'role': 'user',
@@ -651,19 +668,21 @@ void main() {
     test('defaults timestamp to now when missing', () {
       // Arrange: JSON without timestamp
       final before = DateTime.now();
-      final json = {
-        'id': 'msg-no-ts',
-        'role': 'user',
-        'content': 'Test',
-      };
+      final json = {'id': 'msg-no-ts', 'role': 'user', 'content': 'Test'};
 
       // Act: Parse from gateway history
       final message = ChatMessage.fromGatewayHistory(json);
       final after = DateTime.now();
 
       // Assert: Timestamp is set to approximately now
-      expect(message.timestamp.isAfter(before.subtract(Duration(seconds: 1))), isTrue);
-      expect(message.timestamp.isBefore(after.add(Duration(seconds: 1))), isTrue);
+      expect(
+        message.timestamp.isAfter(before.subtract(Duration(seconds: 1))),
+        isTrue,
+      );
+      expect(
+        message.timestamp.isBefore(after.add(Duration(seconds: 1))),
+        isTrue,
+      );
     });
 
     test('defaults to empty content when missing', () {
@@ -697,11 +716,27 @@ void main() {
       expect(message.id.length, greaterThanOrEqualTo(36)); // UUID format
     });
 
+    test('prefers __openclaw.id as stable v4 message id', () {
+      final json = {
+        'role': 'assistant',
+        'content': 'v4 text',
+        'timestamp': 1737264000000,
+        '__openclaw': {
+          'id': 'stable-v4-id',
+          'seq': 7,
+          'transcriptPosition': 'leaf',
+        },
+      };
+      final message = ChatMessage.fromGatewayHistory(json);
+      expect(message.id, equals('stable-v4-id'));
+    });
+
     group('gateway metadata prefix stripping', () {
       // The OpenClaw gateway prepends conversation context to every user
       // message it sends to Claude. fromGatewayHistory must strip it.
 
-      const metadataPreamble = 'Conversation info (untrusted metadata):\n'
+      const metadataPreamble =
+          'Conversation info (untrusted metadata):\n'
           '```json\n'
           '{\n'
           '  "message_id": "10b3b7ba-4735-41bc-8295-ab45057edbfa",\n'
@@ -710,47 +745,53 @@ void main() {
           '}\n'
           '```\n';
 
-      test('strips metadata preamble and gateway timestamp from user message',
-          () {
-        final json = {
-          'role': 'user',
-          'content': '${metadataPreamble}[Sun 2026-03-15 17:19 GMT+1] Hi',
-          'timestamp': 1705315800000,
-        };
+      test(
+        'strips metadata preamble and gateway timestamp from user message',
+        () {
+          final json = {
+            'role': 'user',
+            'content': '${metadataPreamble}[Sun 2026-03-15 17:19 GMT+1] Hi',
+            'timestamp': 1705315800000,
+          };
 
-        final message = ChatMessage.fromGatewayHistory(json);
+          final message = ChatMessage.fromGatewayHistory(json);
 
-        expect(message.content, equals('Hi'));
-      });
+          expect(message.content, equals('Hi'));
+        },
+      );
 
-      test('strips metadata preamble and keeps text when no timestamp prefix',
-          () {
-        final json = {
-          'role': 'user',
-          'content': '${metadataPreamble}Hello without timestamp',
-          'timestamp': 1705315800000,
-        };
+      test(
+        'strips metadata preamble and keeps text when no timestamp prefix',
+        () {
+          final json = {
+            'role': 'user',
+            'content': '${metadataPreamble}Hello without timestamp',
+            'timestamp': 1705315800000,
+          };
 
-        final message = ChatMessage.fromGatewayHistory(json);
+          final message = ChatMessage.fromGatewayHistory(json);
 
-        expect(message.content, equals('Hello without timestamp'));
-      });
+          expect(message.content, equals('Hello without timestamp'));
+        },
+      );
 
-      test('leaves assistant messages untouched even if they match the pattern',
-          () {
-        final content =
-            '${metadataPreamble}[Sun 2026-03-15 17:19 GMT+1] Some text';
-        final json = {
-          'role': 'assistant',
-          'content': content,
-          'timestamp': 1705315800000,
-        };
+      test(
+        'leaves assistant messages untouched even if they match the pattern',
+        () {
+          final content =
+              '${metadataPreamble}[Sun 2026-03-15 17:19 GMT+1] Some text';
+          final json = {
+            'role': 'assistant',
+            'content': content,
+            'timestamp': 1705315800000,
+          };
 
-        final message = ChatMessage.fromGatewayHistory(json);
+          final message = ChatMessage.fromGatewayHistory(json);
 
-        // Assistant messages should not be stripped
-        expect(message.content, equals(content));
-      });
+          // Assistant messages should not be stripped
+          expect(message.content, equals(content));
+        },
+      );
 
       test('leaves regular user messages without the header untouched', () {
         final json = {
@@ -770,8 +811,9 @@ void main() {
           'content': [
             {
               'type': 'text',
-              'text': '${metadataPreamble}[Mon 2026-03-16 09:00 UTC] Good morning',
-            }
+              'text':
+                  '${metadataPreamble}[Mon 2026-03-16 09:00 UTC] Good morning',
+            },
           ],
           'timestamp': 1705315800000,
         };

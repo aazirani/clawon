@@ -30,6 +30,10 @@ class ChatRepositoryImpl implements ChatRepository {
   // Per-connection run ID tracking
   final Map<String, Set<String>> _trackedRunIds = {};
 
+  // v4 chat deltas carry incremental text; accumulate per
+  // connection+runId until final.
+  final Map<String, Map<String, String>> _chatDeltaBuffers = {};
+
   // Metadata update stream - emits connectionId when metadata changes
   final StreamController<String> _metadataUpdateController =
       StreamController<String>.broadcast();
@@ -73,7 +77,9 @@ class ChatRepositoryImpl implements ChatRepository {
     _statusSubscription = null;
 
     // Listen for connection status and drain queue when connected
-    _statusSubscription = _connectionManager.status(connectionId).listen((status) {
+    _statusSubscription = _connectionManager.status(connectionId).listen((
+      status,
+    ) {
       if (status.state == ConnectionState.connected) {
         _drainMessageQueue(connectionId);
       }
@@ -119,6 +125,7 @@ class ChatRepositoryImpl implements ChatRepository {
     // Clear session registry for this connection
     _sessionRegistry.clearConnection(connectionId);
     _sessionRegistry.clearRunIdOwnershipForConnection(connectionId);
+    _chatDeltaBuffers.remove(connectionId);
 
     // Clean up status subscription
     await _statusSubscription?.cancel();
@@ -165,17 +172,38 @@ class ChatRepositoryImpl implements ChatRepository {
 
     // Load local messages into cache first (needed for content-based dedup check below)
     await _messageService.loadMessages(connectionId, sessionKey: sessionKey);
-    final localMessages = _messageService.getMessages(connectionId, sessionKey: sessionKey);
+    final localMessages = _messageService.getMessages(
+      connectionId,
+      sessionKey: sessionKey,
+    );
 
     // CRITICAL: Also include in-memory streaming messages for deduplication.
     // This prevents creating a UUID v5 duplicate when the same message
     // is being streamed with a runId-based ID.
-    final streamingMessages = _streamingHandler.getStreamingMessagesForConnection(connectionId);
+    final streamingMessages = _streamingHandler
+        .getStreamingMessagesForConnection(connectionId);
     final allLocalMessages = [...localMessages, ...streamingMessages];
+
+    // v4 transcripts contain roles with no local representation
+    // (custom messages, compaction entries) - skip instead of throwing.
+    final knownRoles = MessageRole.values.map((r) => r.name).toSet();
 
     for (var i = 0; i < historyData.length; i++) {
       try {
         final jsonData = historyData[i] as Map<String, dynamic>;
+
+        final itemRole = jsonData['role'] as String?;
+        final openClawMeta = jsonData['__openclaw'];
+        final metaKind = openClawMeta is Map<String, dynamic>
+            ? openClawMeta['kind'] as String?
+            : null;
+        if (itemRole == null || !knownRoles.contains(itemRole)) {
+          continue;
+        }
+        if (metaKind == 'compaction' || metaKind == 'reset') {
+          continue;
+        }
+
         final chatMessage = ChatMessage.fromGatewayHistory(jsonData);
 
         // Skip non-visible messages (tool results, empty assistant turns)
@@ -187,12 +215,14 @@ class ChatRepositoryImpl implements ChatRepository {
 
         // Content-based dedup: skip messages already present in local DB or streaming.
         //
-        // The gateway chat.history API returns raw JSONL message objects without
-        // stable IDs. Client-side IDs (uuid.v4 for user messages, runId for
-        // streaming assistant) never match the deterministic UUID v5 computed by
-        // ChatMessage.fromGatewayHistory (role:server_timestamp:content differs
-        // from role:client_timestamp:content). ID matching is structurally
-        // impossible, so content is the only reliable dedup signal.
+        // v3 history items carry no stable id; v4 provides __openclaw.id -
+        // both are resolved in ChatMessage.fromGatewayHistory. Client-side
+        // IDs (uuid.v4 for user messages, runId for streaming assistant)
+        // never match the deterministic UUID v5 computed by
+        // ChatMessage.fromGatewayHistory (role:server_timestamp:content
+        // differs from role:client_timestamp:content). ID matching is
+        // structurally impossible, so content is the only reliable dedup
+        // signal.
         //
         // This rule intentionally applies to BOTH user AND assistant messages:
         // - Messages already in local DB (normal usage) → content matches → skip.
@@ -202,7 +232,8 @@ class ChatRepositoryImpl implements ChatRepository {
         // (which may have trailing whitespace) and gateway history format.
         final gatewayContent = chatMessage.content.trim();
         final alreadyExists = allLocalMessages.any(
-          (m) => m.role == chatMessage.role && m.content.trim() == gatewayContent,
+          (m) =>
+              m.role == chatMessage.role && m.content.trim() == gatewayContent,
         );
         if (alreadyExists) continue;
 
@@ -217,21 +248,26 @@ class ChatRepositoryImpl implements ChatRepository {
     }
 
     // Return ALL local messages for the session (local + any just inserted from gateway).
-    return _messageService.getMessages(connectionId, sessionKey: sessionKey)
+    return _messageService
+        .getMessages(connectionId, sessionKey: sessionKey)
         .map(Message.fromDataModel)
         .toList();
   }
 
   @override
   bool isWaitingForResponse(String connectionId, {String? sessionKey}) {
-    return _messageService.isWaitingForResponse(connectionId, sessionKey: sessionKey);
+    return _messageService.isWaitingForResponse(
+      connectionId,
+      sessionKey: sessionKey,
+    );
   }
 
   @override
   Stream<Message> agentResponses(String connectionId) {
     _messageService.ensureControllers(connectionId);
     // Re-emit active streaming messages for all sessions of this connection
-    final streamingMessages = _streamingHandler.getStreamingMessagesForConnection(connectionId);
+    final streamingMessages = _streamingHandler
+        .getStreamingMessagesForConnection(connectionId);
     for (final message in streamingMessages) {
       Future.microtask(() {
         _messageService.emitAgentResponse(connectionId, message);
@@ -282,26 +318,41 @@ class ChatRepositoryImpl implements ChatRepository {
       sessionKey: sessionKey,
     );
 
-    _messageService.addMessageToCache(connectionId, message, sessionKey: sessionKey);
-    await _messageService.persistMessage(connectionId, message, sessionKey: sessionKey);
+    _messageService.addMessageToCache(
+      connectionId,
+      message,
+      sessionKey: sessionKey,
+    );
+    await _messageService.persistMessage(
+      connectionId,
+      message,
+      sessionKey: sessionKey,
+    );
 
     if (!isConnected) {
       // Queue for later delivery
-      _messageQueue.enqueue(QueuedMessage(
-        id: message.id,
-        connectionId: connectionId,
-        sessionKey: sessionKey,
-        content: content,
-        queuedAt: DateTime.now(),
-      ));
+      _messageQueue.enqueue(
+        QueuedMessage(
+          id: message.id,
+          connectionId: connectionId,
+          sessionKey: sessionKey,
+          content: content,
+          queuedAt: DateTime.now(),
+        ),
+      );
       return false; // queued, not sent
     }
 
     // Send via WebSocket
     final ws = _connectionManager.getWebSocket(connectionId);
     if (ws != null) {
-      await _sendViaWebSocket(connectionId, ws, content, message,
-          sessionKey: sessionKey);
+      await _sendViaWebSocket(
+        connectionId,
+        ws,
+        content,
+        message,
+        sessionKey: sessionKey,
+      );
     }
     return true; // sent immediately
   }
@@ -313,7 +364,11 @@ class ChatRepositoryImpl implements ChatRepository {
     ChatMessage? message, {
     String? sessionKey,
   }) async {
-    _messageService.setWaitingForResponse(connectionId, true, sessionKey: sessionKey);
+    _messageService.setWaitingForResponse(
+      connectionId,
+      true,
+      sessionKey: sessionKey,
+    );
 
     // Register session key for response filtering
     if (sessionKey != null) {
@@ -338,7 +393,8 @@ class ChatRepositoryImpl implements ChatRepository {
     _metadataUpdateController.add(connectionId);
 
     // Build request params for chat.send
-    final effectiveSessionKey = sessionKey ?? getSessionKey(connectionId) ?? 'gateway:chat';
+    final effectiveSessionKey =
+        sessionKey ?? getSessionKey(connectionId) ?? 'gateway:chat';
     final params = <String, dynamic>{
       'message': content,
       'sessionKey': effectiveSessionKey,
@@ -370,6 +426,7 @@ class ChatRepositoryImpl implements ChatRepository {
     } else {
       // No sessionKey provided - clear all data for the connection
       _trackedRunIds[connectionId]?.clear();
+      _chatDeltaBuffers.remove(connectionId);
       _sessionRegistry.clearConnection(connectionId);
     }
 
@@ -421,7 +478,11 @@ class ChatRepositoryImpl implements ChatRepository {
     }
 
     // Set waiting for response since we expect the agent to respond
-    _messageService.setWaitingForResponse(connectionId, true, sessionKey: sessionKey);
+    _messageService.setWaitingForResponse(
+      connectionId,
+      true,
+      sessionKey: sessionKey,
+    );
   }
 
   @override
@@ -434,7 +495,11 @@ class ChatRepositoryImpl implements ChatRepository {
     _messageQueue.removeMessage(messageId);
 
     // Remove from cache and database
-    await _messageService.deleteMessage(connectionId, messageId, sessionKey: sessionKey);
+    await _messageService.deleteMessage(
+      connectionId,
+      messageId,
+      sessionKey: sessionKey,
+    );
   }
 
   @override
@@ -456,13 +521,15 @@ class ChatRepositoryImpl implements ChatRepository {
         messageId,
         MessageStatus.queued,
       );
-      _messageQueue.enqueue(QueuedMessage(
-        id: messageId,
-        connectionId: connectionId,
-        sessionKey: sessionKey,
-        content: content,
-        queuedAt: DateTime.now(),
-      ));
+      _messageQueue.enqueue(
+        QueuedMessage(
+          id: messageId,
+          connectionId: connectionId,
+          sessionKey: sessionKey,
+          content: content,
+          queuedAt: DateTime.now(),
+        ),
+      );
       return false; // re-queued, not sent
     }
 
@@ -475,7 +542,13 @@ class ChatRepositoryImpl implements ChatRepository {
 
     final ws = _connectionManager.getWebSocket(connectionId);
     if (ws != null) {
-      await _sendViaWebSocket(connectionId, ws, content, null, sessionKey: sessionKey);
+      await _sendViaWebSocket(
+        connectionId,
+        ws,
+        content,
+        null,
+        sessionKey: sessionKey,
+      );
       // Update status to sent (sendViaWebSocket skips this when message is null)
       await _messageService.updateMessageStatus(
         connectionId,
@@ -510,10 +583,15 @@ class ChatRepositoryImpl implements ChatRepository {
         if (status == 'started' && runId != null && runId.isNotEmpty) {
           final eventSessionKey = frame.payload?['sessionKey'] as String?;
           // Prefer event-provided sessionKey; fall back to last registered session only if absent
-          final resolvedSessionKey = (eventSessionKey != null && eventSessionKey.isNotEmpty)
+          final resolvedSessionKey =
+              (eventSessionKey != null && eventSessionKey.isNotEmpty)
               ? eventSessionKey
               : _sessionRegistry.getLastSessionKey(connectionId);
-          _sessionRegistry.registerRunId(connectionId, runId, resolvedSessionKey);
+          _sessionRegistry.registerRunId(
+            connectionId,
+            runId,
+            resolvedSessionKey,
+          );
         }
       }
 
@@ -525,6 +603,11 @@ class ChatRepositoryImpl implements ChatRepository {
       // Handle delta frames - process streaming assistant responses
       if (frame.type == FrameType.event && frame.event == 'agent') {
         _handleAgentEvent(connectionId, frame);
+      }
+
+      // Handle v4 chat delta frames - streaming assistant responses
+      if (frame.type == FrameType.event && frame.event == 'chat') {
+        _handleChatEvent(connectionId, frame);
       }
     } catch (e) {
       // Ignore frame processing errors
@@ -548,8 +631,11 @@ class ChatRepositoryImpl implements ChatRepository {
           !_sessionRegistry.runIdBelongsTo(connectionId, runId)) {
         // If the event has no session key but we have registered sessions,
         // use the last known session key and accept the event
-        final hasRegisteredSession = _sessionRegistry.getSessionKeys(connectionId).isNotEmpty;
-        final noEventSessionKey = eventSessionKey == null || eventSessionKey.isEmpty;
+        final hasRegisteredSession = _sessionRegistry
+            .getSessionKeys(connectionId)
+            .isNotEmpty;
+        final noEventSessionKey =
+            eventSessionKey == null || eventSessionKey.isEmpty;
 
         if (noEventSessionKey && hasRegisteredSession) {
           // Use the last known session key
@@ -561,13 +647,18 @@ class ChatRepositoryImpl implements ChatRepository {
       // Determine effective session key
       String? effectiveSessionKey = eventSessionKey;
       if (effectiveSessionKey == null || effectiveSessionKey.isEmpty) {
-        effectiveSessionKey = _sessionRegistry.getSessionKeyForRunId(runId)
-            ?? _sessionRegistry.getLastSessionKey(connectionId);
+        effectiveSessionKey =
+            _sessionRegistry.getSessionKeyForRunId(runId) ??
+            _sessionRegistry.getLastSessionKey(connectionId);
       }
 
       // Track runId -> sessionKey mapping
       if (effectiveSessionKey != null && effectiveSessionKey.isNotEmpty) {
-        _sessionRegistry.registerRunId(connectionId, runId, effectiveSessionKey);
+        _sessionRegistry.registerRunId(
+          connectionId,
+          runId,
+          effectiveSessionKey,
+        );
       }
 
       final result = frame.payload?['result'] as Map<String, dynamic>?;
@@ -583,22 +674,33 @@ class ChatRepositoryImpl implements ChatRepository {
           final tracked = _trackedRunIds[connectionId];
           if (tracked != null && !tracked.contains(runId)) {
             final message = ChatMessage(
-              id: runId,   // use server runId for consistency
+              id: runId, // use server runId for consistency
               role: MessageRole.assistant,
               content: text,
               timestamp: DateTime.now(),
               sessionKey: effectiveSessionKey,
             );
-            _messageService.addMessageToCache(connectionId, message, sessionKey: effectiveSessionKey);
+            _messageService.addMessageToCache(
+              connectionId,
+              message,
+              sessionKey: effectiveSessionKey,
+            );
             _messageService.emitAgentResponse(connectionId, message);
             tracked.add(runId);
-            _messageService.saveMessages(connectionId, sessionKey: effectiveSessionKey);
+            _messageService.saveMessages(
+              connectionId,
+              sessionKey: effectiveSessionKey,
+            );
           }
         }
       }
 
       // Clear waiting state
-      _messageService.setWaitingForResponse(connectionId, false, sessionKey: effectiveSessionKey);
+      _messageService.setWaitingForResponse(
+        connectionId,
+        false,
+        sessionKey: effectiveSessionKey,
+      );
 
       // Update connection metadata with assistant's final response
       _updateMetadataFromPayload(connectionId, frame.payload);
@@ -617,23 +719,34 @@ class ChatRepositoryImpl implements ChatRepository {
       String? effectiveSessionKey = eventSessionKey;
 
       // Check ownership - accept if session or runId belongs to this connection
-      final sessionBelongs = _sessionRegistry.sessionBelongsTo(connectionId, eventSessionKey);
+      final sessionBelongs = _sessionRegistry.sessionBelongsTo(
+        connectionId,
+        eventSessionKey,
+      );
       final runIdBelongs = _sessionRegistry.runIdBelongsTo(connectionId, runId);
 
       // If neither matches directly, check if we have any registered session
       // and the event doesn't specify a session key (fallback for legacy/compat)
-      final hasRegisteredSession = _sessionRegistry.getSessionKeys(connectionId).isNotEmpty;
-      final noEventSessionKey = eventSessionKey == null || eventSessionKey.isEmpty;
+      final hasRegisteredSession = _sessionRegistry
+          .getSessionKeys(connectionId)
+          .isNotEmpty;
+      final noEventSessionKey =
+          eventSessionKey == null || eventSessionKey.isEmpty;
 
       if (!sessionBelongs && !runIdBelongs) {
         // If the event has no session key but we have registered sessions,
         // use the last known session key and accept the event
         if (noEventSessionKey && hasRegisteredSession) {
-          effectiveSessionKey = _sessionRegistry.getSessionKeyForRunId(runId)
-              ?? _sessionRegistry.getLastSessionKey(connectionId);
+          effectiveSessionKey =
+              _sessionRegistry.getSessionKeyForRunId(runId) ??
+              _sessionRegistry.getLastSessionKey(connectionId);
           // Register this runId with our session key
           if (effectiveSessionKey != null) {
-            _sessionRegistry.registerRunId(connectionId, runId, effectiveSessionKey);
+            _sessionRegistry.registerRunId(
+              connectionId,
+              runId,
+              effectiveSessionKey,
+            );
           }
         } else {
           return;
@@ -642,7 +755,11 @@ class ChatRepositoryImpl implements ChatRepository {
 
       // Track runId -> sessionKey mapping
       if (effectiveSessionKey != null && effectiveSessionKey.isNotEmpty) {
-        _sessionRegistry.registerRunId(connectionId, runId, effectiveSessionKey);
+        _sessionRegistry.registerRunId(
+          connectionId,
+          runId,
+          effectiveSessionKey,
+        );
       }
 
       final data = payload?['data'] as Map<String, dynamic>?;
@@ -662,10 +779,18 @@ class ChatRepositoryImpl implements ChatRepository {
         // Check if this is a new run ID
         final isNewRun = tracked != null && !tracked.contains(runId);
         if (isNewRun) {
-          _messageService.addMessageToCache(connectionId, message, sessionKey: effectiveSessionKey);
+          _messageService.addMessageToCache(
+            connectionId,
+            message,
+            sessionKey: effectiveSessionKey,
+          );
           tracked.add(runId);
         } else {
-          _messageService.updateMessageInCache(connectionId, message, sessionKey: effectiveSessionKey);
+          _messageService.updateMessageInCache(
+            connectionId,
+            message,
+            sessionKey: effectiveSessionKey,
+          );
         }
 
         _messageService.emitAgentResponse(connectionId, message);
@@ -677,15 +802,22 @@ class ChatRepositoryImpl implements ChatRepository {
       // Determine effective session key for lifecycle events too
       String? effectiveSessionKey = eventSessionKey;
 
-      final sessionBelongs = _sessionRegistry.sessionBelongsTo(connectionId, eventSessionKey);
+      final sessionBelongs = _sessionRegistry.sessionBelongsTo(
+        connectionId,
+        eventSessionKey,
+      );
       final runIdBelongs = _sessionRegistry.runIdBelongsTo(connectionId, runId);
-      final hasRegisteredSession = _sessionRegistry.getSessionKeys(connectionId).isNotEmpty;
-      final noEventSessionKey = eventSessionKey == null || eventSessionKey.isEmpty;
+      final hasRegisteredSession = _sessionRegistry
+          .getSessionKeys(connectionId)
+          .isNotEmpty;
+      final noEventSessionKey =
+          eventSessionKey == null || eventSessionKey.isEmpty;
 
       if (!sessionBelongs && !runIdBelongs) {
         if (noEventSessionKey && hasRegisteredSession) {
-          effectiveSessionKey = _sessionRegistry.getSessionKeyForRunId(runId)
-              ?? _sessionRegistry.getLastSessionKey(connectionId);
+          effectiveSessionKey =
+              _sessionRegistry.getSessionKeyForRunId(runId) ??
+              _sessionRegistry.getLastSessionKey(connectionId);
         } else {
           return;
         }
@@ -696,10 +828,16 @@ class ChatRepositoryImpl implements ChatRepository {
 
       if (phase == 'end') {
         // Get sessionKey from tracking or event
-        final sessionKey = effectiveSessionKey ?? _sessionRegistry.getSessionKeyForRunId(runId);
+        final sessionKey =
+            effectiveSessionKey ??
+            _sessionRegistry.getSessionKeyForRunId(runId);
 
         // Clear waiting state
-        _messageService.setWaitingForResponse(connectionId, false, sessionKey: sessionKey);
+        _messageService.setWaitingForResponse(
+          connectionId,
+          false,
+          sessionKey: sessionKey,
+        );
 
         // Finalize streaming message
         final message = _streamingHandler.finalizeStream(
@@ -712,9 +850,16 @@ class ChatRepositoryImpl implements ChatRepository {
           // Use the message's sessionKey for cache/DB operations (may differ from resolved sessionKey)
           final messageSessionKey = message.sessionKey ?? sessionKey;
 
-          _messageService.updateMessageInCache(connectionId, message, sessionKey: messageSessionKey);
+          _messageService.updateMessageInCache(
+            connectionId,
+            message,
+            sessionKey: messageSessionKey,
+          );
           _messageService.emitAgentResponse(connectionId, message);
-          _messageService.saveMessages(connectionId, sessionKey: messageSessionKey);
+          _messageService.saveMessages(
+            connectionId,
+            sessionKey: messageSessionKey,
+          );
 
           // Clean up runId tracking
           _sessionRegistry.removeRunIdToSessionKey(runId);
@@ -731,7 +876,244 @@ class ChatRepositoryImpl implements ChatRepository {
     }
   }
 
-  void _updateMetadataFromPayload(String connectionId, Map<String, dynamic>? payload) {
+  /// v4 streaming: gateway emits `chat` events with a state union
+  /// (status | delta | final | aborted | error) instead of `agent` events.
+  void _handleChatEvent(String connectionId, GatewayFrame frame) {
+    final payload = frame.payload;
+    if (payload == null) return;
+
+    final state = payload['state'] as String?;
+    final runId = payload['runId']?.toString();
+    final eventSessionKey = payload['sessionKey'] as String?;
+    if (runId == null || runId.isEmpty) return;
+    if (state == 'status') return; // startup/retry status - not rendered yet
+
+    // Ownership gating identical to agent events
+    String? effectiveSessionKey = eventSessionKey;
+    final sessionBelongs = _sessionRegistry.sessionBelongsTo(
+      connectionId,
+      eventSessionKey,
+    );
+    final runIdBelongs = _sessionRegistry.runIdBelongsTo(connectionId, runId);
+    final hasRegisteredSession = _sessionRegistry
+        .getSessionKeys(connectionId)
+        .isNotEmpty;
+    final noEventSessionKey =
+        eventSessionKey == null || eventSessionKey.isEmpty;
+
+    if (!sessionBelongs && !runIdBelongs) {
+      if (noEventSessionKey && hasRegisteredSession) {
+        effectiveSessionKey =
+            _sessionRegistry.getSessionKeyForRunId(runId) ??
+            _sessionRegistry.getLastSessionKey(connectionId);
+        if (effectiveSessionKey != null) {
+          _sessionRegistry.registerRunId(
+            connectionId,
+            runId,
+            effectiveSessionKey,
+          );
+        }
+      } else {
+        return;
+      }
+    }
+
+    if (effectiveSessionKey != null && effectiveSessionKey.isNotEmpty) {
+      _sessionRegistry.registerRunId(connectionId, runId, effectiveSessionKey);
+    }
+
+    switch (state) {
+      case 'delta':
+        _handleChatDelta(connectionId, effectiveSessionKey, runId, payload);
+        break;
+      case 'final':
+        _handleChatFinal(connectionId, effectiveSessionKey, runId, payload);
+        break;
+      case 'aborted':
+      case 'error':
+        _handleChatTerminalFailure(
+          connectionId,
+          effectiveSessionKey,
+          runId,
+          payload,
+          isError: state == 'error',
+        );
+        break;
+    }
+  }
+
+  void _handleChatDelta(
+    String connectionId,
+    String? sessionKey,
+    String runId,
+    Map<String, dynamic> payload,
+  ) {
+    final deltaText = payload['deltaText'] as String?;
+    if (deltaText == null || deltaText.isEmpty) return;
+
+    // Cumulative message snapshot wins when present and re-syncs the
+    // accumulator; otherwise accumulate incremental deltaText
+    // (replace=true resets the buffer).
+    final buffers = _chatDeltaBuffers.putIfAbsent(connectionId, () => {});
+    final snapshot = _extractTextFromMessage(payload['message']);
+    if (snapshot != null) {
+      buffers[runId] = snapshot;
+      _emitStreamingMessage(connectionId, sessionKey, runId, snapshot);
+      return;
+    }
+    final base = payload['replace'] == true ? '' : (buffers[runId] ?? '');
+    final text = buffers[runId] = base + deltaText;
+    _emitStreamingMessage(connectionId, sessionKey, runId, text);
+  }
+
+  void _handleChatFinal(
+    String connectionId,
+    String? sessionKey,
+    String runId,
+    Map<String, dynamic> payload,
+  ) {
+    final buffers = _chatDeltaBuffers.putIfAbsent(connectionId, () => {});
+    buffers.remove(runId);
+    final finalText = _extractTextFromMessage(payload['message']);
+    if (finalText != null && finalText.isNotEmpty) {
+      _emitStreamingMessage(connectionId, sessionKey, runId, finalText);
+    }
+
+    _messageService.setWaitingForResponse(
+      connectionId,
+      false,
+      sessionKey: sessionKey,
+    );
+    final message = _streamingHandler.finalizeStream(
+      connectionId,
+      sessionKey,
+      runId,
+    );
+    if (message != null) {
+      final messageSessionKey = message.sessionKey ?? sessionKey;
+      _messageService.updateMessageInCache(
+        connectionId,
+        message,
+        sessionKey: messageSessionKey,
+      );
+      _messageService.emitAgentResponse(connectionId, message);
+      _messageService.saveMessages(connectionId, sessionKey: messageSessionKey);
+      _sessionRegistry.removeRunIdToSessionKey(runId);
+      _localDatasource.updateConnectionMetadata(
+        connectionId,
+        lastMessageAt: message.timestamp,
+        lastMessagePreview: message.content,
+      );
+      _metadataUpdateController.add(connectionId);
+    }
+  }
+
+  void _handleChatTerminalFailure(
+    String connectionId,
+    String? sessionKey,
+    String runId,
+    Map<String, dynamic> payload, {
+    required bool isError,
+  }) {
+    final buffers = _chatDeltaBuffers.putIfAbsent(connectionId, () => {});
+    buffers.remove(runId);
+    _messageService.setWaitingForResponse(
+      connectionId,
+      false,
+      sessionKey: sessionKey,
+    );
+    final message = _streamingHandler.finalizeStream(
+      connectionId,
+      sessionKey,
+      runId,
+    );
+    if (message != null) {
+      // Error after partial text - mark failed but keep partial content.
+      final finalized = isError ? message.copyWith(isFailed: true) : message;
+      final messageSessionKey = finalized.sessionKey ?? sessionKey;
+      _messageService.updateMessageInCache(
+        connectionId,
+        finalized,
+        sessionKey: messageSessionKey,
+      );
+      _messageService.emitAgentResponse(connectionId, finalized);
+      _messageService.saveMessages(connectionId, sessionKey: messageSessionKey);
+    } else if (isError) {
+      // Nothing streamed - surface the gateway error so the user sees it.
+      final errorMessageText = payload['errorMessage'] as String?;
+      if (errorMessageText != null && errorMessageText.isNotEmpty) {
+        final errorMessage = ChatMessage(
+          id: runId,
+          role: MessageRole.assistant,
+          content: errorMessageText,
+          timestamp: DateTime.now(),
+          isFailed: true,
+          sessionKey: sessionKey,
+        );
+        _messageService.addMessageToCache(
+          connectionId,
+          errorMessage,
+          sessionKey: sessionKey,
+        );
+        _messageService.emitAgentResponse(connectionId, errorMessage);
+      }
+    }
+    _sessionRegistry.removeRunIdToSessionKey(runId);
+  }
+
+  /// Extract display text from a v4 cumulative `message` snapshot
+  /// ({role, content: String | [{type:"text", text}]}), or null.
+  String? _extractTextFromMessage(dynamic message) {
+    if (message is! Map<String, dynamic>) return null;
+    final content = message['content'];
+    if (content is String && content.isNotEmpty) return content;
+    if (content is List) {
+      final text = content
+          .whereType<Map<String, dynamic>>()
+          .where((c) => c['type'] == 'text')
+          .map((c) => c['text'] as String? ?? '')
+          .join('\n');
+      return text.isEmpty ? null : text;
+    }
+    return null;
+  }
+
+  /// Create/update a streaming assistant message and emit it.
+  void _emitStreamingMessage(
+    String connectionId,
+    String? sessionKey,
+    String runId,
+    String text,
+  ) {
+    final tracked = _trackedRunIds.putIfAbsent(connectionId, () => {});
+    final message = _streamingHandler.handleStreamDelta(
+      connectionId,
+      sessionKey,
+      runId,
+      text,
+    );
+    final isNewRun = !tracked.contains(runId);
+    if (isNewRun) {
+      _messageService.addMessageToCache(
+        connectionId,
+        message,
+        sessionKey: sessionKey,
+      );
+      tracked.add(runId);
+    } else {
+      _messageService.updateMessageInCache(
+        connectionId,
+        message,
+        sessionKey: sessionKey,
+      );
+    }
+    _messageService.emitAgentResponse(connectionId, message);
+  }
+
+  void _updateMetadataFromPayload(
+    String connectionId,
+    Map<String, dynamic>? payload,
+  ) {
     final result = payload?['result'] as Map<String, dynamic>?;
     final payloads = result?['payloads'] as List<dynamic>?;
     if (payloads != null && payloads.isNotEmpty) {
@@ -756,7 +1138,8 @@ class ChatRepositoryImpl implements ChatRepository {
     _statusSubscription = null;
 
     // Clean up all connections
-    for (final connectionId in _connectionManager.getWebSocket('') != null ? [] : []) {
+    for (final connectionId
+        in _connectionManager.getWebSocket('') != null ? [] : []) {
       disconnect(connectionId);
     }
 

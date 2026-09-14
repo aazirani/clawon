@@ -8,12 +8,7 @@ const _uuid = Uuid();
 enum MessageRole { user, assistant, system, toolResult }
 
 /// Message delivery status
-enum MessageStatus {
-  sending,
-  sent,
-  queued,
-  failed,
-}
+enum MessageStatus { sending, sent, queued, failed }
 
 /// A single chat message
 class ChatMessage {
@@ -172,8 +167,10 @@ class ChatMessage {
     final afterFence = trimmed.substring(closeFence + 3).trimLeft();
 
     // Strip optional gateway timestamp: [Day YYYY-MM-DD HH:MM TZ]
-    final withoutTimestamp =
-        afterFence.replaceFirst(RegExp(r'^\[.*?\]\s*'), '');
+    final withoutTimestamp = afterFence.replaceFirst(
+      RegExp(r'^\[.*?\]\s*'),
+      '',
+    );
 
     return withoutTimestamp.isEmpty ? afterFence : withoutTimestamp;
   }
@@ -183,7 +180,9 @@ class ChatMessage {
     // Handle role - can be string or null
     final roleStr = json['role'] is String ? json['role'] as String : null;
     if (roleStr == null) {
-      throw ArgumentError('Message role is required: ${json.keys.toList()}, json: $json');
+      throw ArgumentError(
+        'Message role is required: ${json.keys.toList()}, json: $json',
+      );
     }
 
     final role = MessageRole.values.firstWhere(
@@ -210,9 +209,13 @@ class ChatMessage {
           : DateTime.now(),
       isSending: json['isSending'] is bool ? json['isSending'] as bool : false,
       isFailed: json['isFailed'] is bool ? json['isFailed'] as bool : false,
-      isStreaming: json['isStreaming'] is bool ? json['isStreaming'] as bool : false,
+      isStreaming: json['isStreaming'] is bool
+          ? json['isStreaming'] as bool
+          : false,
       status: status,
-      sessionKey: json['sessionKey'] is String ? json['sessionKey'] as String : null,
+      sessionKey: json['sessionKey'] is String
+          ? json['sessionKey'] as String
+          : null,
     );
   }
 
@@ -280,9 +283,20 @@ class ChatMessage {
     if (json['id'] is String) {
       id = json['id'] as String;
     } else {
-      final contentKey = content.length > 200 ? content.substring(0, 200) : content;
-      final name = '${role.name}:${timestamp.millisecondsSinceEpoch}:$contentKey';
-      id = const Uuid().v5(Namespace.url.value, name);
+      final openClawMeta = json['__openclaw'];
+      final metaId = openClawMeta is Map<String, dynamic>
+          ? openClawMeta['id']
+          : null;
+      if (metaId is String && metaId.isNotEmpty) {
+        id = metaId;
+      } else {
+        final contentKey = content.length > 200
+            ? content.substring(0, 200)
+            : content;
+        final name =
+            '${role.name}:${timestamp.millisecondsSinceEpoch}:$contentKey';
+        id = const Uuid().v5(Namespace.url.value, name);
+      }
     }
 
     return ChatMessage(

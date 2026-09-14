@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-14
+
+### Added
+
+- **OpenClaw Gateway Protocol v4 support** — ClawOn now negotiates protocol range v3–v4, fixing "protocol mismatch" errors with gateways ≥ 2026.6.8 (#1). Older v3 gateways remain fully supported.
+- **V4 chat delta streaming** — streaming replies now use the v4 `chat` delta stream (incremental deltas, replacement refreshes, terminal final/aborted/error events) alongside the legacy v3 `agent`-event path.
+- **Readable protocol-mismatch errors** — protocol-mismatch connection failures now show a readable error ("Gateway requires protocol v4. Update ClawOn or upgrade your gateway.") instead of a raw failure.
+- **V4 history sync** — history sync handles v4 transcript entries (custom messages, compaction records) and uses the gateway's stable message ids for consistent message identity.
+
 ## [1.0.1] - 2026-03-24
 
 ### Added
@@ -35,5 +44,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **25-language support with RTL** — localisation for 25 languages including right-to-left support for Persian (fa), Arabic (ar), and Urdu (ur)
 - **Message history persistence** — all messages stored locally via Drift (SQLite) with per-connection isolation
 
+[1.1.0]: https://github.com/aazirani/clawon/releases/tag/v1.1.0
 [1.0.1]: https://github.com/aazirani/clawon/releases/tag/v1.0.1
 [1.0.0]: https://github.com/aazirani/clawon/releases/tag/v1.0.0

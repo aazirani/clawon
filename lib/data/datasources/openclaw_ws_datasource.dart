@@ -32,13 +32,21 @@ class ConnectionStateChange {
   final bool unexpected;
   final String? errorMessage;
 
-  ConnectionStateChange(this.state,
-      {this.unexpected = false, this.errorMessage});
+  ConnectionStateChange(
+    this.state, {
+    this.unexpected = false,
+    this.errorMessage,
+  });
 }
 
 class OpenClawWebSocketDatasource {
   final DeviceIdentityService _deviceIdentityService;
   final GatewayClientInfo _clientInfo;
+  final WebSocketChannel Function(Uri uri)? _channelFactory;
+
+  /// Protocol version negotiated with the gateway (from hello-ok).
+  /// 3 = legacy gateway, 4 = current gateways. Null before handshake.
+  int? negotiatedProtocol;
 
   WebSocketChannel? _channel;
   final _controller = StreamController<GatewayFrame>.broadcast();
@@ -61,7 +69,10 @@ class OpenClawWebSocketDatasource {
   ConnectionState get state => _state;
 
   OpenClawWebSocketDatasource(
-      this._deviceIdentityService, this._clientInfo);
+    this._deviceIdentityService,
+    this._clientInfo, {
+    WebSocketChannel Function(Uri uri)? channelFactory,
+  }) : _channelFactory = channelFactory;
 
   Future<void> connect(
     String connectionId,
@@ -74,6 +85,7 @@ class OpenClawWebSocketDatasource {
     }
 
     _intentionalDisconnect = false;
+    negotiatedProtocol = null;
     _updateState(ConnectionState.connecting);
 
     try {
@@ -85,7 +97,9 @@ class OpenClawWebSocketDatasource {
       wsUrl = wsUrl
           .replaceFirst('http://', 'ws://')
           .replaceFirst('https://', 'wss://');
-      _channel = WebSocketChannel.connect(Uri.parse(wsUrl));
+      _channel = (_channelFactory ?? WebSocketChannel.connect)(
+        Uri.parse(wsUrl),
+      );
 
       // Set up listener BEFORE waiting for challenge
       _channel!.stream.listen(
@@ -131,7 +145,8 @@ class OpenClawWebSocketDatasource {
             change.state == ConnectionState.pairingRequired
                 ? const PairingRequiredException() // requestId not available at this stage
                 : Exception(
-                    change.errorMessage ?? 'Connection closed before challenge'),
+                    change.errorMessage ?? 'Connection closed before challenge',
+                  ),
           );
         }
       });
@@ -150,8 +165,9 @@ class OpenClawWebSocketDatasource {
       final nonce = challengePayload['nonce'] as String;
 
       // --- Step 2: Resolve auth token (deviceToken overrides gateway token if paired) ---
-      final storedDeviceToken =
-          await _deviceIdentityService.getDeviceToken(connectionId);
+      final storedDeviceToken = await _deviceIdentityService.getDeviceToken(
+        connectionId,
+      );
       final authToken = storedDeviceToken ?? token;
 
       // --- Step 3: Build device block (authToken must match what goes in auth.token) ---
@@ -171,7 +187,7 @@ class OpenClawWebSocketDatasource {
         method: 'connect',
         params: {
           'minProtocol': 3,
-          'maxProtocol': 3,
+          'maxProtocol': 4,
           'client': _clientInfo.toJson(),
           'role': 'operator',
           'scopes': scopes,
@@ -185,13 +201,16 @@ class OpenClawWebSocketDatasource {
       // --- Step 5: Wait for hello-ok ---
       final response = await _waitForResponse(requestId);
       if (response.ok == true) {
+        negotiatedProtocol = response.payload?['protocol'] as int?;
         // Store device token if gateway issued one (first pairing or token rotation).
         // hello-ok payload: { auth: { deviceToken: "...", role: "...", scopes: [...] } }
         final auth = response.payload?['auth'] as Map<String, dynamic>?;
         final newDeviceToken = auth?['deviceToken'] as String?;
         if (newDeviceToken != null) {
           await _deviceIdentityService.storeDeviceToken(
-              connectionId, newDeviceToken);
+            connectionId,
+            newDeviceToken,
+          );
         }
         _updateState(ConnectionState.connected);
       } else {
@@ -201,12 +220,29 @@ class OpenClawWebSocketDatasource {
           final details = response.error?['details'] as Map<String, dynamic>?;
           final requestId = details?['requestId'] as String?;
           // Store requestId in errorMessage so the UI can show it
-          _updateState(ConnectionState.pairingRequired, errorMessage: requestId);
+          _updateState(
+            ConnectionState.pairingRequired,
+            errorMessage: requestId,
+          );
           throw PairingRequiredException(requestId: requestId);
         }
 
+        final errorDetails =
+            response.error?['details'] as Map<String, dynamic>?;
+        final isProtocolMismatch =
+            (errorDetails?['code'] as String?) == 'PROTOCOL_MISMATCH' ||
+            (response.error?['code'] as String?) == 'PROTOCOL_MISMATCH' ||
+            (response.error?['message'] as String?)?.toLowerCase().contains(
+                  'protocol mismatch',
+                ) ==
+                true;
+        if (isProtocolMismatch) {
+          throw Exception(_protocolMismatchMessage(errorDetails));
+        }
+
         // Extract the human-readable message from the error object when available
-        final errorMsg = response.error?['message'] as String? ??
+        final errorMsg =
+            response.error?['message'] as String? ??
             response.error?.toString() ??
             'Connection failed';
         throw Exception(errorMsg);
@@ -230,7 +266,9 @@ class OpenClawWebSocketDatasource {
   }
 
   Future<GatewayFrame> sendRequest(
-      String method, Map<String, dynamic>? params) async {
+    String method,
+    Map<String, dynamic>? params,
+  ) async {
     if (_state != ConnectionState.connected) {
       throw StateError('Not connected');
     }
@@ -250,9 +288,7 @@ class OpenClawWebSocketDatasource {
     if (message is! String) return;
 
     try {
-      final json = Map<String, dynamic>.from(
-        jsonDecode(message) as Map,
-      );
+      final json = Map<String, dynamic>.from(jsonDecode(message) as Map);
 
       final frame = GatewayFrame.fromJson(json);
 
@@ -285,12 +321,29 @@ class OpenClawWebSocketDatasource {
     //   openclaw devices list
     //   openclaw devices approve <REQUEST_ID>
     if (closeCode == 1008 && closeReason.toLowerCase().contains('pairing')) {
-      final error = const PairingRequiredException(); // no requestId available from close frame
+      final error =
+          const PairingRequiredException(); // no requestId available from close frame
       for (final completer in _responseControllers.values) {
         completer.completeError(error);
       }
       _responseControllers.clear();
-      _updateState(ConnectionState.pairingRequired, errorMessage: 'Device pairing required');
+      _updateState(
+        ConnectionState.pairingRequired,
+        errorMessage: 'Device pairing required',
+      );
+      return;
+    }
+
+    // Gateway rejected our protocol version (close 1002 "protocol mismatch").
+    // 1002 is RFC 6455's generic "protocol error" — only treat it as a
+    // version mismatch when the close reason confirms it.
+    if (closeCode == 1002 && closeReason.toLowerCase().contains('protocol')) {
+      final error = _protocolMismatchMessage(null);
+      for (final completer in _responseControllers.values) {
+        completer.completeError(Exception(error));
+      }
+      _responseControllers.clear();
+      _updateState(ConnectionState.failed, errorMessage: error);
       return;
     }
 
@@ -325,8 +378,10 @@ class OpenClawWebSocketDatasource {
     _channel?.sink.add(jsonEncode(frame.toJson()));
   }
 
-  Future<GatewayFrame> _waitForResponse(String id,
-      {Duration timeout = const Duration(seconds: 30)}) {
+  Future<GatewayFrame> _waitForResponse(
+    String id, {
+    Duration timeout = const Duration(seconds: 30),
+  }) {
     final completer = Completer<GatewayFrame>();
     _responseControllers[id] = completer;
 
@@ -341,13 +396,32 @@ class OpenClawWebSocketDatasource {
     return completer.future;
   }
 
-  void _updateState(ConnectionState newState,
-      {bool unexpected = false, String? errorMessage}) {
+  /// Human-readable protocol mismatch error (issue #1: raw "protocol mismatch"
+  /// is meaningless to users).
+  String _protocolMismatchMessage(Map<String, dynamic>? details) {
+    final expected = details?['expectedProtocol'];
+    if (expected is int) {
+      return 'Gateway requires protocol v$expected. '
+          'Update ClawOn or upgrade your gateway.';
+    }
+    return 'Gateway requires a newer protocol. '
+        'Update ClawOn or upgrade your gateway.';
+  }
+
+  void _updateState(
+    ConnectionState newState, {
+    bool unexpected = false,
+    String? errorMessage,
+  }) {
     _state = newState;
     if (!_connectionStateController.isClosed) {
       _connectionStateController.add(
-          ConnectionStateChange(newState,
-              unexpected: unexpected, errorMessage: errorMessage));
+        ConnectionStateChange(
+          newState,
+          unexpected: unexpected,
+          errorMessage: errorMessage,
+        ),
+      );
     }
   }
 

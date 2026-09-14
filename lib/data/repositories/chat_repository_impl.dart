@@ -30,8 +30,9 @@ class ChatRepositoryImpl implements ChatRepository {
   // Per-connection run ID tracking
   final Map<String, Set<String>> _trackedRunIds = {};
 
-  // v4 chat deltas carry incremental text; accumulate per runId until final.
-  final Map<String, String> _chatDeltaBuffers = {};
+  // v4 chat deltas carry incremental text; accumulate per
+  // connection+runId until final.
+  final Map<String, Map<String, String>> _chatDeltaBuffers = {};
 
   // Metadata update stream - emits connectionId when metadata changes
   final StreamController<String> _metadataUpdateController =
@@ -124,7 +125,7 @@ class ChatRepositoryImpl implements ChatRepository {
     // Clear session registry for this connection
     _sessionRegistry.clearConnection(connectionId);
     _sessionRegistry.clearRunIdOwnershipForConnection(connectionId);
-    _chatDeltaBuffers.clear();
+    _chatDeltaBuffers.remove(connectionId);
 
     // Clean up status subscription
     await _statusSubscription?.cancel();
@@ -406,7 +407,7 @@ class ChatRepositoryImpl implements ChatRepository {
     } else {
       // No sessionKey provided - clear all data for the connection
       _trackedRunIds[connectionId]?.clear();
-      _chatDeltaBuffers.clear();
+      _chatDeltaBuffers.remove(connectionId);
       _sessionRegistry.clearConnection(connectionId);
     }
 
@@ -934,16 +935,15 @@ class ChatRepositoryImpl implements ChatRepository {
     // Cumulative message snapshot wins when present and re-syncs the
     // accumulator; otherwise accumulate incremental deltaText
     // (replace=true resets the buffer).
+    final buffers = _chatDeltaBuffers.putIfAbsent(connectionId, () => {});
     final snapshot = _extractTextFromMessage(payload['message']);
     if (snapshot != null) {
-      _chatDeltaBuffers[runId] = snapshot;
+      buffers[runId] = snapshot;
       _emitStreamingMessage(connectionId, sessionKey, runId, snapshot);
       return;
     }
-    final base = payload['replace'] == true
-        ? ''
-        : (_chatDeltaBuffers[runId] ?? '');
-    final text = _chatDeltaBuffers[runId] = base + deltaText;
+    final base = payload['replace'] == true ? '' : (buffers[runId] ?? '');
+    final text = buffers[runId] = base + deltaText;
     _emitStreamingMessage(connectionId, sessionKey, runId, text);
   }
 
@@ -953,7 +953,8 @@ class ChatRepositoryImpl implements ChatRepository {
     String runId,
     Map<String, dynamic> payload,
   ) {
-    _chatDeltaBuffers.remove(runId);
+    final buffers = _chatDeltaBuffers.putIfAbsent(connectionId, () => {});
+    buffers.remove(runId);
     final finalText = _extractTextFromMessage(payload['message']);
     if (finalText != null && finalText.isNotEmpty) {
       _emitStreamingMessage(connectionId, sessionKey, runId, finalText);
@@ -995,7 +996,8 @@ class ChatRepositoryImpl implements ChatRepository {
     Map<String, dynamic> payload, {
     required bool isError,
   }) {
-    _chatDeltaBuffers.remove(runId);
+    final buffers = _chatDeltaBuffers.putIfAbsent(connectionId, () => {});
+    buffers.remove(runId);
     _messageService.setWaitingForResponse(
       connectionId,
       false,

@@ -58,6 +58,7 @@ void main() {
     when(() => manager.setFrameHandler(captureAny())).thenAnswer((inv) {
       handler = inv.positionalArguments[0] as FrameHandler;
     });
+    when(() => manager.disconnect(any())).thenAnswer((_) async {});
     when(() => messageService.emitAgentResponse(any(), any())).thenAnswer((
       inv,
     ) {
@@ -421,6 +422,37 @@ void main() {
       );
 
       expect(emitted, isEmpty);
+    });
+
+    test('delta buffers are scoped per connection', () async {
+      registry.registerSession('conn-1', 'agent:a:s1');
+      registry.registerRunId('conn-1', 'run-13', 'agent:a:s1');
+      registry.registerSession('conn-2', 'agent:a:s2');
+      registry.registerRunId('conn-2', 'run-14', 'agent:a:s2');
+
+      handler(
+        'conn-1',
+        chatFrame({
+          'runId': 'run-13',
+          'sessionKey': 'agent:a:s1',
+          'seq': 0,
+          'state': 'delta',
+          'deltaText': 'part one',
+        }),
+      );
+      await repo.disconnect('conn-2');
+      handler(
+        'conn-1',
+        chatFrame({
+          'runId': 'run-13',
+          'sessionKey': 'agent:a:s1',
+          'seq': 1,
+          'state': 'delta',
+          'deltaText': ' part two',
+        }),
+      );
+
+      expect(emitted.last.content, equals('part one part two'));
     });
   });
 

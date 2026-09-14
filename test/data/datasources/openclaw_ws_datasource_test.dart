@@ -9,8 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
-class MockDeviceIdentityService extends Mock
-    implements DeviceIdentityService {}
+class MockDeviceIdentityService extends Mock implements DeviceIdentityService {}
 
 /// Hand-rolled WS fake: web_socket_channel 3.x ships no mock library.
 /// Only members the datasource touches are implemented; noSuchMethod covers
@@ -49,10 +48,8 @@ class FakeWebSocketChannel implements WebSocketChannel {
   Stream<dynamic> get stream => _incoming.stream;
 
   @override
-  WebSocketSink get sink => FakeWebSocketSink(
-        sentFrames.add,
-        () async => _incoming.close(),
-      );
+  WebSocketSink get sink =>
+      FakeWebSocketSink(sentFrames.add, () async => _incoming.close());
 
   @override
   Future get ready => _ready.future;
@@ -107,7 +104,7 @@ void main() {
   /// Returns the sent connect frame and the still-pending connect() future
   /// so tests can reply to the request.
   Future<(Map<String, dynamic> connectJson, Future<void> future)>
-      pumpConnect() async {
+  pumpConnect() async {
     final future = datasource.connect('conn-1', 'https://gw.example', 'token');
     // Let connect() subscribe to frameStream before the server speaks.
     await Future<void>.delayed(Duration.zero);
@@ -128,22 +125,28 @@ void main() {
 
   setUp(() {
     deviceIdentity = MockDeviceIdentityService();
-    when(() => deviceIdentity.getDeviceToken(any()))
-        .thenAnswer((_) async => null);
-    when(() => deviceIdentity.buildDeviceBlock(
-          nonce: any(named: 'nonce'),
-          clientId: any(named: 'clientId'),
-          clientMode: any(named: 'clientMode'),
-          role: any(named: 'role'),
-          scopes: any(named: 'scopes'),
-          authToken: any(named: 'authToken'),
-        )).thenAnswer((_) async => <String, dynamic>{
-          'id': 'device-1',
-          'publicKey': 'key',
-          'signature': 'sig',
-        });
-    when(() => deviceIdentity.storeDeviceToken(any(), any()))
-        .thenAnswer((_) async {});
+    when(
+      () => deviceIdentity.getDeviceToken(any()),
+    ).thenAnswer((_) async => null);
+    when(
+      () => deviceIdentity.buildDeviceBlock(
+        nonce: any(named: 'nonce'),
+        clientId: any(named: 'clientId'),
+        clientMode: any(named: 'clientMode'),
+        role: any(named: 'role'),
+        scopes: any(named: 'scopes'),
+        authToken: any(named: 'authToken'),
+      ),
+    ).thenAnswer(
+      (_) async => <String, dynamic>{
+        'id': 'device-1',
+        'publicKey': 'key',
+        'signature': 'sig',
+      },
+    );
+    when(
+      () => deviceIdentity.storeDeviceToken(any(), any()),
+    ).thenAnswer((_) async {});
   });
 
   test('connect advertises protocol range 3..4', () async {
@@ -182,8 +185,9 @@ void main() {
     await future;
 
     expect(datasource.negotiatedProtocol, equals(4));
-    verify(() => deviceIdentity.storeDeviceToken('conn-1', 'device-token-1'))
-        .called(1);
+    verify(
+      () => deviceIdentity.storeDeviceToken('conn-1', 'device-token-1'),
+    ).called(1);
   });
 
   test('v3 gateway negotiation still works (protocol 3)', () async {
@@ -223,8 +227,16 @@ void main() {
       },
     });
 
-    await expectLater(future, throwsA(isA<Exception>().having(
-        (e) => e.toString(), 'message', contains('Update ClawOn'))));
+    await expectLater(
+      future,
+      throwsA(
+        isA<Exception>().having(
+          (e) => e.toString(),
+          'message',
+          contains('Update ClawOn'),
+        ),
+      ),
+    );
     expect(datasource.state, equals(ConnectionState.failed));
   });
 
@@ -244,10 +256,59 @@ void main() {
     await expectLater(future, throwsA(anything));
     await Future<void>.delayed(Duration.zero);
     await sub.cancel();
-    expect(
-      failures.any(
-          (m) => m.contains('Update ClawOn') || m.contains('protocol')),
-      isTrue,
-    );
+    expect(failures.any((m) => m.contains('Update ClawOn')), isTrue);
   });
+
+  test(
+    'WS close 1002 without protocol reason falls through to generic disconnect',
+    () async {
+      datasource = buildDatasource();
+      final future = datasource.connect(
+        'conn-1',
+        'https://gw.example',
+        'token',
+      );
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+      final failures = <String>[];
+      final sub = datasource.stateStream.listen((change) {
+        if (change.errorMessage != null) failures.add(change.errorMessage!);
+      });
+      channel.serverClose(1002, 'bad framing');
+
+      await expectLater(future, throwsA(anything));
+      await Future<void>.delayed(Duration.zero);
+      await sub.cancel();
+      expect(
+        failures.any((m) => m.contains('Connection closed unexpectedly')),
+        isTrue,
+      );
+      expect(failures.any((m) => m.contains('Update ClawOn')), isFalse);
+    },
+  );
+
+  test(
+    'top-level PROTOCOL_MISMATCH error code surfaces readable message',
+    () async {
+      datasource = buildDatasource();
+      final (connectJson, future) = await pumpConnect();
+      channel.serverSend({
+        'type': 'res',
+        'id': connectJson['id'],
+        'ok': false,
+        'error': {'code': 'PROTOCOL_MISMATCH', 'message': 'unhelpful'},
+      });
+
+      await expectLater(
+        future,
+        throwsA(
+          isA<Exception>().having(
+            (e) => e.toString(),
+            'message',
+            contains('Update ClawOn'),
+          ),
+        ),
+      );
+    },
+  );
 }

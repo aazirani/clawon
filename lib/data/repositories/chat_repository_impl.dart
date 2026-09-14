@@ -184,18 +184,19 @@ class ChatRepositoryImpl implements ChatRepository {
         .getStreamingMessagesForConnection(connectionId);
     final allLocalMessages = [...localMessages, ...streamingMessages];
 
+    // v4 transcripts contain roles with no local representation
+    // (custom messages, compaction entries) - skip instead of throwing.
+    final knownRoles = MessageRole.values.map((r) => r.name).toSet();
+
     for (var i = 0; i < historyData.length; i++) {
       try {
         final jsonData = historyData[i] as Map<String, dynamic>;
 
-        // v4 transcripts contain roles with no local representation
-        // (custom messages, compaction entries) - skip instead of throwing.
         final itemRole = jsonData['role'] as String?;
         final openClawMeta = jsonData['__openclaw'];
         final metaKind = openClawMeta is Map<String, dynamic>
             ? openClawMeta['kind'] as String?
             : null;
-        const knownRoles = {'user', 'assistant', 'system', 'toolResult'};
         if (itemRole == null || !knownRoles.contains(itemRole)) {
           continue;
         }
@@ -214,12 +215,14 @@ class ChatRepositoryImpl implements ChatRepository {
 
         // Content-based dedup: skip messages already present in local DB or streaming.
         //
-        // The gateway chat.history API returns raw JSONL message objects without
-        // stable IDs. Client-side IDs (uuid.v4 for user messages, runId for
-        // streaming assistant) never match the deterministic UUID v5 computed by
-        // ChatMessage.fromGatewayHistory (role:server_timestamp:content differs
-        // from role:client_timestamp:content). ID matching is structurally
-        // impossible, so content is the only reliable dedup signal.
+        // v3 history items carry no stable id; v4 provides __openclaw.id -
+        // both are resolved in ChatMessage.fromGatewayHistory. Client-side
+        // IDs (uuid.v4 for user messages, runId for streaming assistant)
+        // never match the deterministic UUID v5 computed by
+        // ChatMessage.fromGatewayHistory (role:server_timestamp:content
+        // differs from role:client_timestamp:content). ID matching is
+        // structurally impossible, so content is the only reliable dedup
+        // signal.
         //
         // This rule intentionally applies to BOTH user AND assistant messages:
         // - Messages already in local DB (normal usage) → content matches → skip.

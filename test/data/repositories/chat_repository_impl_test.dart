@@ -541,6 +541,12 @@ void main() {
             'timestamp': 1737264000002,
             '__openclaw': {'id': 'stable-v4-id', 'seq': 5},
           },
+          {
+            'role': 'user',
+            'content': 'after reset',
+            'timestamp': 1737264000003,
+            '__openclaw': {'kind': 'reset', 'seq': 6},
+          },
         ],
       );
       getIt.registerSingleton<SessionRepository>(sessionRepo);
@@ -577,9 +583,10 @@ void main() {
       );
 
       // Unknown roles skipped (no ArgumentError thrown), known items survive.
-      expect(messages.any((m) => m.content == 'real message'), isTrue);
+      expect(messages.where((m) => m.content == 'real message').length, 1);
       expect(messages.any((m) => m.content == 'Compaction'), isFalse);
       expect(messages.any((m) => m.content == 'tool output'), isFalse);
+      expect(messages.any((m) => m.content == 'after reset'), isFalse);
     });
   });
 }

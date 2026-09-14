@@ -39,6 +39,11 @@ class ConnectionStateChange {
 class OpenClawWebSocketDatasource {
   final DeviceIdentityService _deviceIdentityService;
   final GatewayClientInfo _clientInfo;
+  final WebSocketChannel Function(Uri uri)? _channelFactory;
+
+  /// Protocol version negotiated with the gateway (from hello-ok).
+  /// 3 = legacy gateway, 4 = current gateways. Null before handshake.
+  int? negotiatedProtocol;
 
   WebSocketChannel? _channel;
   final _controller = StreamController<GatewayFrame>.broadcast();
@@ -61,7 +66,10 @@ class OpenClawWebSocketDatasource {
   ConnectionState get state => _state;
 
   OpenClawWebSocketDatasource(
-      this._deviceIdentityService, this._clientInfo);
+    this._deviceIdentityService,
+    this._clientInfo, {
+    WebSocketChannel Function(Uri uri)? channelFactory,
+  }) : _channelFactory = channelFactory;
 
   Future<void> connect(
     String connectionId,
@@ -74,6 +82,7 @@ class OpenClawWebSocketDatasource {
     }
 
     _intentionalDisconnect = false;
+    negotiatedProtocol = null;
     _updateState(ConnectionState.connecting);
 
     try {
@@ -85,7 +94,7 @@ class OpenClawWebSocketDatasource {
       wsUrl = wsUrl
           .replaceFirst('http://', 'ws://')
           .replaceFirst('https://', 'wss://');
-      _channel = WebSocketChannel.connect(Uri.parse(wsUrl));
+      _channel = (_channelFactory ?? WebSocketChannel.connect)(Uri.parse(wsUrl));
 
       // Set up listener BEFORE waiting for challenge
       _channel!.stream.listen(
@@ -170,8 +179,8 @@ class OpenClawWebSocketDatasource {
         id: requestId,
         method: 'connect',
         params: {
-          'minProtocol': 3,
-          'maxProtocol': 3,
+        'minProtocol': 3,
+        'maxProtocol': 4,
           'client': _clientInfo.toJson(),
           'role': 'operator',
           'scopes': scopes,
@@ -185,6 +194,7 @@ class OpenClawWebSocketDatasource {
       // --- Step 5: Wait for hello-ok ---
       final response = await _waitForResponse(requestId);
       if (response.ok == true) {
+        negotiatedProtocol = response.payload?['protocol'] as int?;
         // Store device token if gateway issued one (first pairing or token rotation).
         // hello-ok payload: { auth: { deviceToken: "...", role: "...", scopes: [...] } }
         final auth = response.payload?['auth'] as Map<String, dynamic>?;
@@ -203,6 +213,18 @@ class OpenClawWebSocketDatasource {
           // Store requestId in errorMessage so the UI can show it
           _updateState(ConnectionState.pairingRequired, errorMessage: requestId);
           throw PairingRequiredException(requestId: requestId);
+        }
+
+        final errorDetails =
+            response.error?['details'] as Map<String, dynamic>?;
+        final isProtocolMismatch =
+            (errorDetails?['code'] as String?) == 'PROTOCOL_MISMATCH' ||
+                (response.error?['message'] as String?)
+                        ?.toLowerCase()
+                        .contains('protocol mismatch') ==
+                    true;
+        if (isProtocolMismatch) {
+          throw Exception(_protocolMismatchMessage(errorDetails));
         }
 
         // Extract the human-readable message from the error object when available
@@ -294,6 +316,17 @@ class OpenClawWebSocketDatasource {
       return;
     }
 
+    // Gateway rejected our protocol version (close 1002 "protocol mismatch").
+    if (closeCode == 1002) {
+      final error = _protocolMismatchMessage(null);
+      for (final completer in _responseControllers.values) {
+        completer.completeError(Exception(error));
+      }
+      _responseControllers.clear();
+      _updateState(ConnectionState.failed, errorMessage: error);
+      return;
+    }
+
     _updateState(
       ConnectionState.disconnected,
       unexpected: true,
@@ -339,6 +372,18 @@ class OpenClawWebSocketDatasource {
     });
 
     return completer.future;
+  }
+
+  /// Human-readable protocol mismatch error (issue #1: raw "protocol mismatch"
+  /// is meaningless to users).
+  String _protocolMismatchMessage(Map<String, dynamic>? details) {
+    final expected = details?['expectedProtocol'];
+    if (expected is int) {
+      return 'Gateway requires protocol v$expected. '
+          'Update ClawOn or upgrade your gateway.';
+    }
+    return 'Gateway requires a newer protocol. '
+        'Update ClawOn or upgrade your gateway.';
   }
 
   void _updateState(ConnectionState newState,

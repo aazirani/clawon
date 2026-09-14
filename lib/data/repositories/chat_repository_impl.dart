@@ -124,6 +124,7 @@ class ChatRepositoryImpl implements ChatRepository {
     // Clear session registry for this connection
     _sessionRegistry.clearConnection(connectionId);
     _sessionRegistry.clearRunIdOwnershipForConnection(connectionId);
+    _chatDeltaBuffers.clear();
 
     // Clean up status subscription
     await _statusSubscription?.cancel();
@@ -405,6 +406,7 @@ class ChatRepositoryImpl implements ChatRepository {
     } else {
       // No sessionKey provided - clear all data for the connection
       _trackedRunIds[connectionId]?.clear();
+      _chatDeltaBuffers.clear();
       _sessionRegistry.clearConnection(connectionId);
     }
 
@@ -929,17 +931,19 @@ class ChatRepositoryImpl implements ChatRepository {
     final deltaText = payload['deltaText'] as String?;
     if (deltaText == null || deltaText.isEmpty) return;
 
-    // Cumulative message snapshot wins when present; otherwise accumulate
-    // incremental deltaText (replace=true resets the buffer).
-    final text =
-        _extractTextFromMessage(payload['message']) ??
-        () {
-          if (payload['replace'] == true) {
-            return _chatDeltaBuffers[runId] = deltaText;
-          }
-          return _chatDeltaBuffers[runId] =
-              (_chatDeltaBuffers[runId] ?? '') + deltaText;
-        }();
+    // Cumulative message snapshot wins when present and re-syncs the
+    // accumulator; otherwise accumulate incremental deltaText
+    // (replace=true resets the buffer).
+    final snapshot = _extractTextFromMessage(payload['message']);
+    if (snapshot != null) {
+      _chatDeltaBuffers[runId] = snapshot;
+      _emitStreamingMessage(connectionId, sessionKey, runId, snapshot);
+      return;
+    }
+    final base = payload['replace'] == true
+        ? ''
+        : (_chatDeltaBuffers[runId] ?? '');
+    final text = _chatDeltaBuffers[runId] = base + deltaText;
     _emitStreamingMessage(connectionId, sessionKey, runId, text);
   }
 
@@ -949,9 +953,9 @@ class ChatRepositoryImpl implements ChatRepository {
     String runId,
     Map<String, dynamic> payload,
   ) {
+    _chatDeltaBuffers.remove(runId);
     final finalText = _extractTextFromMessage(payload['message']);
     if (finalText != null && finalText.isNotEmpty) {
-      _chatDeltaBuffers.remove(runId);
       _emitStreamingMessage(connectionId, sessionKey, runId, finalText);
     }
 
@@ -1003,13 +1007,15 @@ class ChatRepositoryImpl implements ChatRepository {
       runId,
     );
     if (message != null) {
-      final messageSessionKey = message.sessionKey ?? sessionKey;
+      // Error after partial text - mark failed but keep partial content.
+      final finalized = isError ? message.copyWith(isFailed: true) : message;
+      final messageSessionKey = finalized.sessionKey ?? sessionKey;
       _messageService.updateMessageInCache(
         connectionId,
-        message,
+        finalized,
         sessionKey: messageSessionKey,
       );
-      _messageService.emitAgentResponse(connectionId, message);
+      _messageService.emitAgentResponse(connectionId, finalized);
       _messageService.saveMessages(connectionId, sessionKey: messageSessionKey);
     } else if (isError) {
       // Nothing streamed - surface the gateway error so the user sees it.

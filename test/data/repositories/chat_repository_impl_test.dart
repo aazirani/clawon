@@ -287,6 +287,141 @@ void main() {
 
       expect(emitted, isEmpty);
     });
+
+    test('snapshot sync keeps buffer consistent for later deltas', () {
+      registry.registerSession('conn-1', 'agent:a:s1');
+      registry.registerRunId('conn-1', 'run-8', 'agent:a:s1');
+
+      handler(
+        'conn-1',
+        chatFrame({
+          'runId': 'run-8',
+          'sessionKey': 'agent:a:s1',
+          'seq': 0,
+          'state': 'delta',
+          'deltaText': 'partial',
+        }),
+      );
+      handler(
+        'conn-1',
+        chatFrame({
+          'runId': 'run-8',
+          'sessionKey': 'agent:a:s1',
+          'seq': 1,
+          'state': 'delta',
+          'deltaText': ' more',
+          'message': {
+            'role': 'assistant',
+            'content': [
+              {'type': 'text', 'text': 'partial more (full)'},
+            ],
+          },
+        }),
+      );
+      handler(
+        'conn-1',
+        chatFrame({
+          'runId': 'run-8',
+          'sessionKey': 'agent:a:s1',
+          'seq': 2,
+          'state': 'delta',
+          'deltaText': ' !',
+        }),
+      );
+
+      expect(emitted.last.content, equals('partial more (full) !'));
+    });
+
+    test('error after partial text marks finalized message failed', () {
+      registry.registerSession('conn-1', 'agent:a:s1');
+      registry.registerRunId('conn-1', 'run-9', 'agent:a:s1');
+
+      handler(
+        'conn-1',
+        chatFrame({
+          'runId': 'run-9',
+          'sessionKey': 'agent:a:s1',
+          'seq': 0,
+          'state': 'delta',
+          'deltaText': 'partial answer',
+        }),
+      );
+      handler(
+        'conn-1',
+        chatFrame({
+          'runId': 'run-9',
+          'sessionKey': 'agent:a:s1',
+          'seq': 1,
+          'state': 'error',
+          'errorMessage': 'boom',
+        }),
+      );
+
+      expect(emitted.last.content, equals('partial answer'));
+      expect(emitted.last.isFailed, isTrue);
+    });
+
+    test('aborted after partial text finalizes message', () {
+      registry.registerSession('conn-1', 'agent:a:s1');
+      registry.registerRunId('conn-1', 'run-10', 'agent:a:s1');
+
+      handler(
+        'conn-1',
+        chatFrame({
+          'runId': 'run-10',
+          'sessionKey': 'agent:a:s1',
+          'seq': 0,
+          'state': 'delta',
+          'deltaText': 'partial text',
+        }),
+      );
+      handler(
+        'conn-1',
+        chatFrame({
+          'runId': 'run-10',
+          'sessionKey': 'agent:a:s1',
+          'seq': 1,
+          'state': 'aborted',
+        }),
+      );
+
+      expect(emitted.last.isStreaming, isFalse);
+      expect(emitted.last.content, equals('partial text'));
+      expect(emitted.last.isFailed, isFalse);
+    });
+
+    test('unknown state values are ignored', () {
+      registry.registerSession('conn-1', 'agent:a:s1');
+      registry.registerRunId('conn-1', 'run-11', 'agent:a:s1');
+
+      handler(
+        'conn-1',
+        chatFrame({
+          'runId': 'run-11',
+          'sessionKey': 'agent:a:s1',
+          'seq': 0,
+          'state': 'delta_v2',
+          'deltaText': 'should be ignored',
+        }),
+      );
+
+      expect(emitted, isEmpty);
+    });
+
+    test('chat event for unowned session is ignored', () {
+      handler(
+        'conn-1',
+        chatFrame({
+          'runId': 'run-12',
+          'sessionKey': 'agent:other:s9',
+          'seq': 0,
+          'state': 'delta',
+          'deltaText': 'not ours',
+        }),
+      );
+
+      expect(emitted, isEmpty);
+    });
   });
 
   group('v3 agent events (regression)', () {

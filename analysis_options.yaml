@@ -30,6 +30,14 @@ analyzer:
     # MobX code generation creates public classes from private mixins, which triggers this warning.
     # This is intentional MobX pattern and safe to ignore.
     library_private_types_in_public_api: ignore
+  exclude:
+    - build/**
+    - android/**
+    - ios/**
+    - web/**
+    - windows/**
+    - macos/**
+    - linux/**
 
 # Additional information about this file can be found at
 # https://dart.dev/guides/language/analysis-options
